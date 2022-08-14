@@ -2,14 +2,14 @@
 Go utility for Peer to Peer Architecture.
 
 ## Ring Configuration parameters
-| Parameters       | Type     | Usage                                                                                                                                                                                                      |
-|------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| BindAddr         | string   | The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946". [Read more](https://www.serf.io/docs/agent/options.html#bind)                      |
-| RPCPort          | int      | The address that Ring will bind to for the member's RPC server. By default this is "127.0.0.1:7373", allowing only loopback connections. [Read more](https://www.serf.io/docs/agent/options.html#rpc-addr) |
-| NodeName         | string   | Unique node name to identify this member.                                                                                                                                                                  |
-| SeedAddresses    | []string | Addresses of other members to join upon start up.                                                                                                                                                          |
-| VirtualNodeCount | int      | Number of virtual nodes to create on the ring for this member.                                                                                                                                             |
-
+| Parameters       | Type                                                                                                             | Usage                                                                                                                                                                                                      |
+|------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| BindAddr         | string                                                                                                           | The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946". [Read more](https://www.serf.io/docs/agent/options.html#bind)                      |
+| RPCPort          | int                                                                                                              | The address that Ring will bind to for the member's RPC server. By default this is "127.0.0.1:7373", allowing only loopback connections. [Read more](https://www.serf.io/docs/agent/options.html#rpc-addr) |
+| NodeName         | string                                                                                                           | Unique node name to identify this member.                                                                                                                                                                  |
+| SeedAddresses    | []string                                                                                                         | Addresses of other members to join upon start up.                                                                                                                                                          |
+| VirtualNodeCount | int                                                                                                              | Number of virtual nodes to create on the ring for this member.                                                                                                                                             |
+| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/f6306cf287105f18f831db916ef01823ef867fd4/types.go#L10) | Hash function to calculate position of the server on the ring.                                                                                                                                             | 
 ## Quick Start
 Create a new ring member.
 ```go
@@ -28,7 +28,7 @@ ringMember, err := ring.NewMember(ring.Config{
 ```
 
 Use `ringMember#AddListener` method to add a new handler to be notified when new node joins on the ring.
-Look at [this Handler interface](https://github.com/Brijeshlakkad/ring/blob/1022cee940b0f31aa73b6b4d115d5b6a4e208546/membership.go#L141) to implement your own handler.
+Look at [this Handler interface](https://github.com/Brijeshlakkad/ring/blob/f6306cf287105f18f831db916ef01823ef867fd4/types.go#L4) to implement your own handler.
 ```go
 ringMember.AddListener(listenerId string, handler Handler)
 ```
