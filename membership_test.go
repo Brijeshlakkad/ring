@@ -53,7 +53,7 @@ func setupMember(t *testing.T, members []*ring.Membership) ([]*ring.Membership, 
 		h.joins = make(chan map[string]string, 3)
 		h.leaves = make(chan string, 3)
 	} else {
-		c.SeedAddress = members[0].BindAddr
+		c.SeedAddresses = []string{members[0].BindAddr}
 	}
 	m, err := ring.NewMemberShip(h, c)
 	require.NoError(t, err)

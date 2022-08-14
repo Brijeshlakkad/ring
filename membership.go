@@ -48,11 +48,8 @@ func (m *Membership) setupCluster() error {
 	}
 
 	go m.eventHandler()
-	if m.SeedAddress != "" {
-		StartJoinAddresses := []string{
-			m.SeedAddress,
-		}
-		_, err = m.cluster.Join(StartJoinAddresses, true)
+	if m.SeedAddresses != nil && len(m.SeedAddresses) > 0 {
+		_, err = m.cluster.Join(m.SeedAddresses, true)
 		if err != nil {
 			return err
 		}
@@ -131,11 +128,11 @@ func (m *Membership) logError(err error, msg string, member serf.Member) {
 }
 
 type MembershipConfig struct {
-	NodeName     string
-	BindAddr     string
-	Tags         map[string]string
-	SeedAddress  string
-	virtualNodes int
+	NodeName      string
+	BindAddr      string
+	Tags          map[string]string
+	SeedAddresses []string
+	virtualNodes  int
 }
 
 type Handler interface {

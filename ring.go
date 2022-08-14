@@ -27,8 +27,7 @@ type Config struct {
 	BindAddr         string
 	RPCPort          int
 	NodeName         string
-	SeedAddress      string
-	BootStrap        bool
+	SeedAddresses    []string
 	VirtualNodeCount int
 }
 
@@ -78,7 +77,6 @@ func (m *Member) setupMembership() (func() error, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("setupmembership: %s\n", rpcAddr)
 	m.membership, err = NewMemberShip(m.handler, MembershipConfig{
 		NodeName: m.Config.NodeName,
 		BindAddr: m.Config.BindAddr,
@@ -86,7 +84,7 @@ func (m *Member) setupMembership() (func() error, error) {
 			"rpc_addr":      rpcAddr,
 			"virtual_nodes": strconv.Itoa(m.Config.VirtualNodeCount),
 		},
-		SeedAddress: m.Config.SeedAddress,
+		SeedAddresses: m.Config.SeedAddresses,
 	})
 	if err != nil {
 		return nil, err

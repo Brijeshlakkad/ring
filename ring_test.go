@@ -17,14 +17,14 @@ func TestAgent(t *testing.T) {
 		bindAddr := fmt.Sprintf("%s:%d", "127.0.0.1", ports[0])
 		rpcPort := ports[1]
 
-		var seedAddress string
+		var seedAddresses []string
 		if i != 0 {
-			seedAddress = ringMembers[0].Config.BindAddr
+			seedAddresses = []string{ringMembers[0].Config.BindAddr}
 		}
 
 		ringMember, err := ring.NewMember(ring.Config{
 			NodeName:         fmt.Sprintf("%d", i),
-			SeedAddress:      seedAddress,
+			SeedAddresses:    seedAddresses,
 			BindAddr:         bindAddr,
 			RPCPort:          rpcPort,
 			VirtualNodeCount: 3,
