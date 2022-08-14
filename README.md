@@ -39,6 +39,10 @@ All the handlers' `RemoveListener` will get called when the member shutdowns.
 ringMember.RemoveListener(listenerId string)
 ```
 
+Upon join a listener will receive the below parameters in the function call:
+1. `rpcAddr` - RPC address of the new member that has joined the ring.
+2. `vNodeCount` - Number of virtual nodes of the new member on the ring.
+
 ### **Can I contribute to this project?**
 Feel free to create a PR, I’m more than happy to review and merge it.
 

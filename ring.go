@@ -145,24 +145,24 @@ func NewHandlerWrapper() *HandlerWrapper {
 	}
 }
 
-func (h *HandlerWrapper) Join(nodeKey string, vNodeCount int) error {
+func (h *HandlerWrapper) Join(rpcAddr string, vNodeCount int) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for _, listener := range h.listeners {
-		if err := listener.Join(nodeKey, vNodeCount); err != nil {
+		if err := listener.Join(rpcAddr, vNodeCount); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h *HandlerWrapper) Leave(nodeKey string) error {
+func (h *HandlerWrapper) Leave(rpcAddr string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for _, listener := range h.listeners {
-		if err := listener.Leave(nodeKey); err != nil {
+		if err := listener.Leave(rpcAddr); err != nil {
 			return err
 		}
 	}
