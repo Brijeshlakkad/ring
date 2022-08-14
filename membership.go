@@ -134,8 +134,3 @@ type MembershipConfig struct {
 	SeedAddresses []string
 	virtualNodes  int
 }
-
-type Handler interface {
-	Join(nodeKey string, vNodeCount int) error
-	Leave(nodeKey string) error
-}

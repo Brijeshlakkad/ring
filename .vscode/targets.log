@@ -6,8 +6,11 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 # PARTICULAR PURPOSE.
 
 # This program built for i386-apple-darwin11.3.0
+ 
+make: *** No rule to make target `all'.  Stop.
 
-# Make data base, printed on Sun Aug 14 17:00:34 2022
+
+# Make data base, printed on Sun Aug 14 18:42:12 2022
 
 # Variables
 
@@ -170,9 +173,9 @@ VSCODE_PID = 1161
 
 # Directories
 
-# . (device 16777232, inode 84949235): 17 files, no impossibilities.
+# . (device 16777232, inode 84949235): 18 files, no impossibilities.
 
-# 17 files, no impossibilities in 1 directories.
+# 18 files, no impossibilities in 1 directories.
 
 # Implicit Rules
 
@@ -203,7 +206,7 @@ all:
 # Not a target:
 Makefile:
 #  Implicit rule search has been done.
-#  Last modified 2022-08-14 15:20:07
+#  Last modified 2022-08-14 17:36:45
 #  File has been updated.
 #  Successfully updated.
 # variable set hash-table stats:
@@ -215,7 +218,7 @@ test:
 #  File does not exist.
 #  File has not been updated.
 #  commands to execute (from `Makefile', line 3):
-	go test -race ./...
+	go test -race -v
 	
 
 # Not a target:
@@ -237,8 +240,6 @@ test:
 # strcache size: total = 4096 / max = 4096 / min = 4096 / avg = 4096
 # strcache free: total = 4087 / max = 4087 / min = 4087 / avg = 4087
 
-# Finished Make data base on Sun Aug 14 17:00:34 2022
+# Finished Make data base on Sun Aug 14 18:42:12 2022
 
  
-make: *** No rule to make target `all'.  Stop.
-

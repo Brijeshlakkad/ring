@@ -29,6 +29,7 @@ type Config struct {
 	NodeName         string
 	SeedAddresses    []string
 	VirtualNodeCount int
+	HashFunction     HashFunction
 }
 
 func (c Config) RPCAddr() (string, error) {
@@ -63,7 +64,7 @@ func NewMember(config Config) (*Member, error) {
 
 func (m *Member) setupConsistentHashRouter() (func() error, error) {
 	var err error
-	m.router, err = NewConsistentHashRouter(nil)
+	m.router, err = NewConsistentHashRouter(m.HashFunction)
 	if err != nil {
 		return nil, err
 	}

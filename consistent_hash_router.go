@@ -27,10 +27,6 @@ func (p *ParentNode) GetKey() string {
 	return p.nodeKey
 }
 
-type HashFunction interface {
-	hash(name string) uint64
-}
-
 func NewConsistentHashRouter(hashFunction HashFunction) (*ConsistentHashRouter, error) {
 	if hashFunction == nil {
 		// Default hash function
