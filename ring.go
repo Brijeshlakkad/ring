@@ -6,16 +6,15 @@ import (
 	"strconv"
 	"sync"
 
-	"google.golang.org/grpc"
+	"github.com/hashicorp/go-hclog"
 )
 
-type Member struct {
+type Ring struct {
 	Config
-	handler *HandlerWrapper
+	handler *handlerWrapper
 
-	server     *grpc.Server
-	router     *ConsistentHashRouter
-	membership *Membership
+	router     *consistentHashRouter
+	membership *membership
 
 	shutdownListeners []func() error
 	shutdown          bool
@@ -30,6 +29,7 @@ type Config struct {
 	SeedAddresses    []string
 	VirtualNodeCount int
 	HashFunction     HashFunction
+	Logger           hclog.Logger
 }
 
 func (c Config) RPCAddr() (string, error) {
@@ -40,11 +40,20 @@ func (c Config) RPCAddr() (string, error) {
 	return fmt.Sprintf("%s:%d", host, c.RPCPort), nil
 }
 
-func NewMember(config Config) (*Member, error) {
-	r := &Member{
+func NewRing(config Config) (*Ring, error) {
+	if config.Logger == nil {
+		config.Logger = hclog.New(&hclog.LoggerOptions{
+			Name:   "ring",
+			Output: hclog.DefaultOutput,
+			Level:  hclog.DefaultLevel,
+		})
+	}
+	r := &Ring{
 		Config:    config,
 		shutdowns: make(chan struct{}),
-		handler:   NewHandlerWrapper(),
+		handler: NewHandlerWrapper(&handlerWrapperConfig{
+			Logger: config.Logger,
+		}),
 	}
 	setup := []func() (func() error, error){
 		r.setupConsistentHashRouter,
@@ -62,72 +71,87 @@ func NewMember(config Config) (*Member, error) {
 	return r, nil
 }
 
-func (m *Member) setupConsistentHashRouter() (func() error, error) {
+func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 	var err error
-	m.router, err = NewConsistentHashRouter(m.HashFunction)
+	r.router, err = newConsistentHashRouter(r.HashFunction)
 	if err != nil {
 		return nil, err
 	}
-	m.AddListener("router", m.router)
 
-	return nil, nil
+	r.AddListener(r.NodeName, r.router)
+
+	// Remove listener upon shutdown.
+	return func() error {
+		r.RemoveListener(r.NodeName)
+		return nil
+	}, nil
 }
 
-func (m *Member) setupMembership() (func() error, error) {
-	rpcAddr, err := m.Config.RPCAddr()
+func (r *Ring) setupMembership() (func() error, error) {
+	rpcAddr, err := r.Config.RPCAddr()
 	if err != nil {
 		return nil, err
 	}
-	m.membership, err = NewMemberShip(m.handler, MembershipConfig{
-		NodeName: m.Config.NodeName,
-		BindAddr: m.Config.BindAddr,
+	r.membership, err = NewMemberShip(r.handler, MembershipConfig{
+		NodeName: r.Config.NodeName,
+		BindAddr: r.Config.BindAddr,
 		Tags: map[string]string{
 			"rpc_addr":      rpcAddr,
-			"virtual_nodes": strconv.Itoa(m.Config.VirtualNodeCount),
+			"virtual_nodes": strconv.Itoa(r.Config.VirtualNodeCount),
 		},
-		SeedAddresses: m.Config.SeedAddresses,
+		SeedAddresses: r.Config.SeedAddresses,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return func() error {
-		if err := m.membership.Leave(); err != nil {
+		if err := r.membership.Leave(); err != nil {
 			return err
 		}
 		return nil
 	}, nil
 }
 
-func (m *Member) AddListener(listenerId string, handler Handler) {
-	m.handler.lock.Lock()
-	defer m.handler.lock.Unlock()
+// AddListener registers the listener that will be called upon the node join/leave event in the ring.
+func (r *Ring) AddListener(listenerId string, handler Handler) {
+	r.handler.lock.Lock()
+	defer r.handler.lock.Unlock()
 
-	m.handler.listeners[listenerId] = handler
-
-	// Will be removed when Member shuts down.
-	m.shutdownListeners = append(m.shutdownListeners, func() error {
-		m.RemoveListener(listenerId)
-		return nil
-	})
+	if r.shutdown {
+		return
+	}
+	r.handler.listeners[listenerId] = handler
 }
 
-func (m *Member) RemoveListener(listenerId string) {
-	m.handler.lock.Lock()
-	defer m.handler.lock.Unlock()
+// RemoveListener removes the listener using the listenerId.
+func (r *Ring) RemoveListener(listenerId string) {
+	r.handler.lock.Lock()
+	defer r.handler.lock.Unlock()
 
-	delete(m.handler.listeners, listenerId)
+	if r.shutdown {
+		return
+	}
+	delete(r.handler.listeners, listenerId)
 }
 
-func (m *Member) Shutdown() error {
-	m.shutdownLock.Lock()
-	defer m.shutdownLock.Unlock()
-	if m.shutdown {
+// GetNode gets the node responsible for the given #objKey.
+func (r *Ring) GetNode(objKey string) (interface{}, bool) {
+	if r.shutdown {
+		return nil, false
+	}
+	return r.router.Get(objKey)
+}
+
+func (r *Ring) Shutdown() error {
+	r.shutdownLock.Lock()
+	defer r.shutdownLock.Unlock()
+	if r.shutdown {
 		return nil
 	}
-	m.shutdown = true
-	close(m.shutdowns)
+	r.shutdown = true
+	close(r.shutdowns)
 
-	for _, fn := range m.shutdownListeners {
+	for _, fn := range r.shutdownListeners {
 		if err := fn(); err != nil {
 			return err
 		}
@@ -135,36 +159,42 @@ func (m *Member) Shutdown() error {
 	return nil
 }
 
-type HandlerWrapper struct {
+type handlerWrapper struct {
 	listeners map[string]Handler
 	lock      sync.Mutex
+	logger    hclog.Logger
 }
 
-func NewHandlerWrapper() *HandlerWrapper {
-	return &HandlerWrapper{
+type handlerWrapperConfig struct {
+	Logger hclog.Logger
+}
+
+func NewHandlerWrapper(config *handlerWrapperConfig) *handlerWrapper {
+	return &handlerWrapper{
 		listeners: map[string]Handler{},
+		logger:    config.Logger,
 	}
 }
 
-func (h *HandlerWrapper) Join(rpcAddr string, vNodeCount int) error {
+func (h *handlerWrapper) Join(rpcAddr string, vNodeCount int) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	for _, listener := range h.listeners {
+	for listenerId, listener := range h.listeners {
 		if err := listener.Join(rpcAddr, vNodeCount); err != nil {
-			return err
+			h.logger.Error(fmt.Sprintf("Error while joining %s", listenerId), "error", err)
 		}
 	}
 	return nil
 }
 
-func (h *HandlerWrapper) Leave(rpcAddr string) error {
+func (h *handlerWrapper) Leave(rpcAddr string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	for _, listener := range h.listeners {
+	for listenerId, listener := range h.listeners {
 		if err := listener.Leave(rpcAddr); err != nil {
-			return err
+			h.logger.Error(fmt.Sprintf("Error while leaving %s", listenerId), "error", err)
 		}
 	}
 	return nil
