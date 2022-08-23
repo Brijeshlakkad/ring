@@ -1,4 +1,4 @@
-package ring_test
+package ring
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Brijeshlakkad/ring"
 	"github.com/hashicorp/serf/serf"
 	"github.com/stretchr/testify/require"
 	"github.com/travisjeffery/go-dynaport"
@@ -32,10 +31,10 @@ func TestMembership(t *testing.T) {
 			1 == len(handler.leaves)
 	}, 3*time.Second, 250*time.Millisecond)
 
-	require.Equal(t, fmt.Sprintf("%d", 2), <-handler.leaves)
+	require.Equal(t, m[2].Tags["rpc_addr"], <-handler.leaves)
 }
 
-func setupMember(t *testing.T, members []*ring.Membership) ([]*ring.Membership, *handler) {
+func setupMember(t *testing.T, members []*membership) ([]*membership, *handler) {
 	id := len(members)
 	ports := dynaport.Get(1)
 	addr := fmt.Sprintf("%s:%d", "127.0.0.1", ports[0])
@@ -43,7 +42,7 @@ func setupMember(t *testing.T, members []*ring.Membership) ([]*ring.Membership, 
 		"rpc_addr":      addr,
 		"virtual_nodes": "3",
 	}
-	c := ring.MembershipConfig{
+	c := MembershipConfig{
 		NodeName: fmt.Sprintf("%d", id),
 		BindAddr: addr,
 		Tags:     tags,
@@ -55,7 +54,7 @@ func setupMember(t *testing.T, members []*ring.Membership) ([]*ring.Membership, 
 	} else {
 		c.SeedAddresses = []string{members[0].BindAddr}
 	}
-	m, err := ring.NewMemberShip(h, c)
+	m, err := NewMemberShip(h, c)
 	require.NoError(t, err)
 	members = append(members, m)
 	return members, h

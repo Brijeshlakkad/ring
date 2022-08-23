@@ -8,8 +8,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// Membership Type wrapping Serf to provide discovery and cluster membership to our service.
-type Membership struct {
+// membership Type wrapping Serf to provide discovery and cluster membership to our service.
+type membership struct {
 	MembershipConfig
 	handler Handler
 	cluster *serf.Serf
@@ -17,8 +17,8 @@ type Membership struct {
 	logger  *zap.Logger
 }
 
-func NewMemberShip(handler Handler, config MembershipConfig) (*Membership, error) {
-	c := &Membership{
+func NewMemberShip(handler Handler, config MembershipConfig) (*membership, error) {
+	c := &membership{
 		MembershipConfig: config,
 		handler:          handler,
 		logger:           zap.L().Named("membership"),
@@ -29,7 +29,7 @@ func NewMemberShip(handler Handler, config MembershipConfig) (*Membership, error
 	return c, nil
 }
 
-func (m *Membership) setupCluster() error {
+func (m *membership) setupCluster() error {
 	addr, err := net.ResolveTCPAddr("tcp", m.BindAddr)
 	if err != nil {
 		return err
@@ -59,7 +59,7 @@ func (m *Membership) setupCluster() error {
 }
 
 // Runs in a loop reading events sent by Serf into the events channel, handling each incoming event according to the event’s type.
-func (m *Membership) eventHandler() {
+func (m *membership) eventHandler() {
 	for e := range m.events {
 		switch e.EventType() {
 		case serf.EventMemberJoin:
@@ -80,7 +80,7 @@ func (m *Membership) eventHandler() {
 	}
 }
 
-func (m *Membership) handleJoin(member serf.Member) {
+func (m *membership) handleJoin(member serf.Member) {
 	vNodeCount, err := strconv.Atoi(member.Tags["virtual_nodes"])
 	if err != nil {
 		m.logError(err, "failed to join", member)
@@ -93,31 +93,31 @@ func (m *Membership) handleJoin(member serf.Member) {
 	}
 }
 
-func (m *Membership) handleLeave(member serf.Member) {
+func (m *membership) handleLeave(member serf.Member) {
 	if err := m.handler.Leave(
-		member.Name,
+		member.Tags["rpc_addr"],
 	); err != nil {
 		m.logError(err, "failed to leave", member)
 	}
 }
 
 // Returns whether the given Serf member is the local member by checking the members’ names.
-func (m *Membership) isLocal(member serf.Member) bool {
+func (m *membership) isLocal(member serf.Member) bool {
 	return m.cluster.LocalMember().Name == member.Name
 }
 
 // Members Returns a point-in-time snapshot of the cluster’s Serf members.
-func (m *Membership) Members() []serf.Member {
+func (m *membership) Members() []serf.Member {
 	return m.cluster.Members()
 }
 
 // Leave Tells this member to leave the Serf cluster.
-func (m *Membership) Leave() error {
+func (m *membership) Leave() error {
 	return m.cluster.Leave()
 }
 
 // Logs the given error and message.
-func (m *Membership) logError(err error, msg string, member serf.Member) {
+func (m *membership) logError(err error, msg string, member serf.Member) {
 	log := m.logger.Error
 	log(
 		msg,

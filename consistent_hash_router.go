@@ -9,38 +9,42 @@ import (
 	"sync"
 )
 
-type ConsistentHashRouter struct {
+var (
+	ErrRealNodeNotFound = errors.New("real node not found")
+)
+
+type consistentHashRouter struct {
 	hashFunction HashFunction
-	realNodes    map[uint64]*ParentNode
+	realNodes    map[uint64]*parentNode
 	virtualNodes map[uint64]*virtualNode
 	sortedMap    []uint64
 
 	lock sync.RWMutex
 }
 
-type ParentNode struct {
+type parentNode struct {
 	nodeKey      string
 	virtualNodes map[uint64]*virtualNode
 }
 
-func (p *ParentNode) GetKey() string {
+func (p *parentNode) GetKey() string {
 	return p.nodeKey
 }
 
-func NewConsistentHashRouter(hashFunction HashFunction) (*ConsistentHashRouter, error) {
+func newConsistentHashRouter(hashFunction HashFunction) (*consistentHashRouter, error) {
 	if hashFunction == nil {
 		// Default hash function
 		hashFunction = &MD5HashFunction{}
 	}
-	return &ConsistentHashRouter{
+	return &consistentHashRouter{
 		hashFunction: hashFunction,
-		realNodes:    map[uint64]*ParentNode{},
+		realNodes:    map[uint64]*parentNode{},
 		virtualNodes: map[uint64]*virtualNode{},
 		sortedMap:    []uint64{},
 	}, nil
 }
 
-func (c *ConsistentHashRouter) Join(nodeKey string, vNodeCount int) error {
+func (c *consistentHashRouter) Join(nodeKey string, vNodeCount int) error {
 	if vNodeCount < 0 {
 		return errors.New("virtual node count should be equal or greater than zero")
 	}
@@ -69,7 +73,7 @@ func (c *ConsistentHashRouter) Join(nodeKey string, vNodeCount int) error {
 	return nil
 }
 
-func (c *ConsistentHashRouter) Leave(nodeKey string) error {
+func (c *consistentHashRouter) Leave(nodeKey string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -92,13 +96,13 @@ func (c *ConsistentHashRouter) Leave(nodeKey string) error {
 
 		return nil
 	}
-	return errors.New("Real node found!")
+	return ErrRealNodeNotFound
 }
 
-func (c *ConsistentHashRouter) createOrGetParentNode(nodeKey string) *ParentNode {
+func (c *consistentHashRouter) createOrGetParentNode(nodeKey string) *parentNode {
 	pNode, found := c.getParentNode(nodeKey)
 	if !found {
-		pNode = &ParentNode{
+		pNode = &parentNode{
 			nodeKey:      nodeKey,
 			virtualNodes: map[uint64]*virtualNode{},
 		}
@@ -107,15 +111,16 @@ func (c *ConsistentHashRouter) createOrGetParentNode(nodeKey string) *ParentNode
 	return pNode
 }
 
-func (c *ConsistentHashRouter) getParentNode(nodeKey string) (*ParentNode, bool) {
-	if pNode, ok := c.realNodes[c.hashFunction.hash(nodeKey)]; ok {
+func (c *consistentHashRouter) getParentNode(nodeKey string) (*parentNode, bool) {
+	hash := c.hashFunction.hash(nodeKey)
+	if pNode, ok := c.realNodes[hash]; ok {
 		return pNode, true
 	}
 	return nil, false
 }
 
 // Get clockwise nearest real node based on the key
-func (c *ConsistentHashRouter) Get(key string) (interface{}, bool) {
+func (c *consistentHashRouter) Get(key string) (interface{}, bool) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -139,7 +144,7 @@ func (c *ConsistentHashRouter) Get(key string) (interface{}, bool) {
 	return c.virtualNodes[c.sortedMap[index]].getRealNode(), true
 }
 
-func (c *ConsistentHashRouter) GetVirtualNodes(key string) ([]virtualNode, bool) {
+func (c *consistentHashRouter) GetVirtualNodes(key string) ([]virtualNode, bool) {
 	if pNode, ok := c.realNodes[c.hashFunction.hash(key)]; ok {
 		var virtualNodes []virtualNode
 		for _, vNode := range pNode.virtualNodes {
@@ -152,7 +157,7 @@ func (c *ConsistentHashRouter) GetVirtualNodes(key string) ([]virtualNode, bool)
 
 // virtualNode allows to distribute data across nodes at a finer granularity than can be easily achieved using a single-token architecture.
 type virtualNode struct {
-	parentNode ParentNode
+	parentNode parentNode
 	index      int
 }
 
