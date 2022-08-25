@@ -17,7 +17,7 @@ type membership struct {
 	logger  *zap.Logger
 }
 
-func NewMemberShip(handler Handler, config MembershipConfig) (*membership, error) {
+func newMemberShip(handler Handler, config MembershipConfig) (*membership, error) {
 	c := &membership{
 		MembershipConfig: config,
 		handler:          handler,

@@ -72,6 +72,14 @@ func (h *handler) Leave(id string) error {
 	return nil
 }
 
+func TestRing_ConsistentHashRouter_For_Single_Node_Ring(t *testing.T) {
+	ringMembers := setupTestRingMembers(t, 1, nil)
+
+	node, ok := ringMembers[0].GetNode(objectKey)
+	require.Equal(t, true, ok)
+	require.NotEmpty(t, node)
+}
+
 func TestRing_ConsistentHashRouter(t *testing.T) {
 	ringMembers := setupTestRingMembers(t, 2, nil)
 
