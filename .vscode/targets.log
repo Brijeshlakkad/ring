@@ -7,7 +7,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 
 # This program built for i386-apple-darwin11.3.0
 
-# Make data base, printed on Mon Aug 22 17:02:08 2022
+# Make data base, printed on Wed Aug 24 09:39:30 2022
 
 # Variables
 
@@ -56,7 +56,7 @@ CONFLUENT_HOME = /Users/brijeshlakkad/confluent
 # default
 .FEATURES := target-specific order-only second-expansion else-if archives jobserver check-symlink
 # environment
-SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.gMg73kVxfD/Listeners
+SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.VUTTPmvqii/Listeners
 # automatic
 %F = $(notdir $%)
 # environment
@@ -160,7 +160,7 @@ LANG = C
 # environment
 JAVA_8_HOME = /Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home
 # environment
-VSCODE_PID = 8620
+VSCODE_PID = 3486
 # variable set hash-table stats:
 # Load=75/1024=7%, Rehash=0, Collisions=3/99=3%
 
@@ -170,7 +170,7 @@ VSCODE_PID = 8620
 
 # Directories
 
-# . (device 16777231, inode 84949235): 19 files, no impossibilities.
+# . (device 16777234, inode 84949235): 19 files, no impossibilities.
 
 # 19 files, no impossibilities in 1 directories.
 
@@ -237,7 +237,7 @@ test:
 # strcache size: total = 4096 / max = 4096 / min = 4096 / avg = 4096
 # strcache free: total = 4087 / max = 4087 / min = 4087 / avg = 4087
 
-# Finished Make data base on Mon Aug 22 17:02:08 2022
+# Finished Make data base on Wed Aug 24 09:39:30 2022
 
  
 make: *** No rule to make target `all'.  Stop.

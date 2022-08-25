@@ -51,7 +51,7 @@ func NewRing(config Config) (*Ring, error) {
 	r := &Ring{
 		Config:    config,
 		shutdowns: make(chan struct{}),
-		handler: NewHandlerWrapper(&handlerWrapperConfig{
+		handler: newHandlerWrapper(&handlerWrapperConfig{
 			Logger: config.Logger,
 		}),
 	}
@@ -78,6 +78,17 @@ func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 		return nil, err
 	}
 
+	rpcAddr, err := r.RPCAddr()
+	if err != nil {
+		return nil, err
+	}
+
+	// Add this node on the ring.
+	err = r.router.Join(rpcAddr, r.VirtualNodeCount)
+	if err != nil {
+		return nil, err
+	}
+
 	r.AddListener(r.NodeName, r.router)
 
 	// Remove listener upon shutdown.
@@ -92,7 +103,7 @@ func (r *Ring) setupMembership() (func() error, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.membership, err = NewMemberShip(r.handler, MembershipConfig{
+	r.membership, err = newMemberShip(r.handler, MembershipConfig{
 		NodeName: r.Config.NodeName,
 		BindAddr: r.Config.BindAddr,
 		Tags: map[string]string{
@@ -169,7 +180,7 @@ type handlerWrapperConfig struct {
 	Logger hclog.Logger
 }
 
-func NewHandlerWrapper(config *handlerWrapperConfig) *handlerWrapper {
+func newHandlerWrapper(config *handlerWrapperConfig) *handlerWrapper {
 	return &handlerWrapper{
 		listeners: map[string]Handler{},
 		logger:    config.Logger,

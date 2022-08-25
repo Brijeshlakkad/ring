@@ -54,7 +54,7 @@ func setupMember(t *testing.T, members []*membership) ([]*membership, *handler) 
 	} else {
 		c.SeedAddresses = []string{members[0].BindAddr}
 	}
-	m, err := NewMemberShip(h, c)
+	m, err := newMemberShip(h, c)
 	require.NoError(t, err)
 	members = append(members, m)
 	return members, h
