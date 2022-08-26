@@ -14,6 +14,6 @@ type HashFunction interface {
 type MemberType uint8
 
 const (
-	ShardMember        = iota // RingMember takes part in the sharding.
-	LoadBalancerMember        // Doesn't take part in the sharding, but knows the addresses of member.
+	ShardMember        MemberType = iota // RingMember takes part in the sharding.
+	LoadBalancerMember                   // Doesn't take part in the sharding, but knows the addresses of member.
 )

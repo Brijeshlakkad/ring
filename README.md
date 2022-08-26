@@ -9,9 +9,10 @@ Go utility for Peer to Peer Architecture.
 | NodeName         | string                                                                                                           | Unique node name to identify this member.                                                                                                                                                                  |
 | SeedAddresses    | []string                                                                                                         | Addresses of other members to join upon start up.                                                                                                                                                          |
 | VirtualNodeCount | int                                                                                                              | Number of virtual nodes to create on the ring for this member.                                                                                                                                             |
-| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/f6306cf287105f18f831db916ef01823ef867fd4/types.go#L10) | Hash function to calculate position of the server on the ring.                                                                                                                                             | 
+| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/f6306cf287105f18f831db916ef01823ef867fd4/types.go#L10) | Hash function to calculate position of the server on the ring.                                                                                                                                             |
+| MemberType       | [MemberType](https://github.com/Brijeshlakkad/ring/blob/ff61485ce23d72714bfb67d7201dc42f4933afa1/types.go#L16)   | Type of the membership: 1. ShardMember 2. LoadBalancerMember.                                                                                                                                              |
 ## Quick Start
-Create a new ring member.
+Create a new ring member. ```LoadBalancerMember``` member has the list of all types of members. 
 ```go
 import (
 	// Other dependencies....
@@ -23,7 +24,8 @@ ringMember, err := ring.NewMember(ring.Config{
     SeedAddresses:      []string{},             // Addresses of other members to join upon start up.
     BindAddr:           '127.0.0.1:7946',       // The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946".
     RPCPort:            '7373',                 // The address that Ring will bind to for the member's RPC server. By default this is "127.0.0.1:7373", allowing only loopback connections.
-    VirtualNodeCount:   '3'                     // This will create 3 virtual nodes on the ring.
+    VirtualNodeCount:   '3',                    // This will create 3 virtual nodes on the ring.
+    MemberType:         LoadBalancerMember,     // This member will not take part in the sharding, but has the list of members (ShardMember) who is responsible for sharding. 
 })
 ```
 
