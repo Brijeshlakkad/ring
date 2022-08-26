@@ -19,14 +19,24 @@ func TestRing_Listener(t *testing.T) {
 	h := &handler{}
 	h.joins = make(chan map[string]string, 3)
 	h.leaves = make(chan string, 3)
-	ringMembers := setupTestRingMembers(t, 2, func(ringMember *ring.Ring, i int) {
-		if i == 0 {
-			ringMember.AddListener("test-listener-0", h)
+	ringMembers := setupTestRingMembers(t, 3, func(ringMemberConfig *ring.Config, i int) {
+		if i == 2 {
+			ringMemberConfig.MemberType = ring.LoadBalancerMember
+		} else {
+			ringMemberConfig.MemberType = ring.ShardMember
 		}
-	})
+	},
+		func(ringMember *ring.Ring, i int) {
+			if i == 0 {
+				ringMember.AddListener("test-listener-0", h)
+			}
+			if i == 2 {
+				ringMember.MemberType = ring.LoadBalancerMember
+			}
+		})
 
 	require.Eventually(t, func() bool {
-		return 1 == len(h.joins) &&
+		return 2 == len(h.joins) &&
 			0 == len(h.leaves)
 	}, 3*time.Second, 250*time.Millisecond)
 
@@ -41,12 +51,52 @@ func TestRing_Listener(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
-			return 0 == len(h.joins) &&
+			return 1 == len(h.joins) &&
 				1 == len(h.leaves)
 		}, 3*time.Second, 250*time.Millisecond)
 
+		err = ringMembers[2].Shutdown()
+		require.NoError(t, err)
+
 		err = ringMembers[0].Shutdown()
 		require.NoError(t, err)
+	}()
+}
+
+func TestRing_GetLoadBalancers(t *testing.T) {
+	h := &handler{}
+	h.joins = make(chan map[string]string, 3)
+	h.leaves = make(chan string, 3)
+	leaderIndex := 0
+	loadBalancerIndex := 2
+	ringMembers := setupTestRingMembers(t, 3, func(ringMemberConfig *ring.Config, i int) {
+		if i == 2 {
+			ringMemberConfig.MemberType = ring.LoadBalancerMember
+		} else {
+			ringMemberConfig.MemberType = ring.ShardMember
+		}
+	}, func(ringMember *ring.Ring, i int) {
+		if i == leaderIndex {
+			ringMember.AddListener("test-listener-0", h)
+		}
+		if i == loadBalancerIndex {
+			ringMember.MemberType = ring.LoadBalancerMember
+		}
+	})
+
+	loadBalancers := ringMembers[leaderIndex].GetLoadBalancers()
+	require.Equal(t, 1, len(loadBalancers))
+
+	loadBalancerRPCAddr, err := ringMembers[loadBalancerIndex].RPCAddr()
+	require.NoError(t, err)
+
+	require.Equal(t, loadBalancerRPCAddr, loadBalancers[0])
+
+	defer func() {
+		for _, ringMember := range ringMembers {
+			err := ringMember.Shutdown()
+			require.NoError(t, err)
+		}
 	}()
 }
 
@@ -55,17 +105,18 @@ type handler struct {
 	leaves chan string
 }
 
-func (h *handler) Join(nodeKey string, vNodeCount int) error {
+func (h *handler) Join(nodeKey string, vNodeCount int, memberType ring.MemberType) error {
 	if h.joins != nil {
 		h.joins <- map[string]string{
 			"rpc_addr":      nodeKey,
 			"virtual_nodes": strconv.Itoa(vNodeCount),
+			"member_type":   strconv.Itoa(int(memberType)),
 		}
 	}
 	return nil
 }
 
-func (h *handler) Leave(id string) error {
+func (h *handler) Leave(id string, memberType ring.MemberType) error {
 	if h.leaves != nil {
 		h.leaves <- id
 	}
@@ -73,7 +124,7 @@ func (h *handler) Leave(id string) error {
 }
 
 func TestRing_ConsistentHashRouter_For_Single_Node_Ring(t *testing.T) {
-	ringMembers := setupTestRingMembers(t, 1, nil)
+	ringMembers := setupTestRingMembers(t, 1, nil, nil)
 
 	node, ok := ringMembers[0].GetNode(objectKey)
 	require.Equal(t, true, ok)
@@ -81,14 +132,14 @@ func TestRing_ConsistentHashRouter_For_Single_Node_Ring(t *testing.T) {
 }
 
 func TestRing_ConsistentHashRouter(t *testing.T) {
-	ringMembers := setupTestRingMembers(t, 2, nil)
+	ringMembers := setupTestRingMembers(t, 2, nil, nil)
 
 	node, ok := ringMembers[0].GetNode(objectKey)
 	require.Equal(t, true, ok)
 	require.NotEmpty(t, node)
 }
 
-func setupTestRingMembers(t *testing.T, count int, afterRingMember func(*ring.Ring, int)) []*ring.Ring {
+func setupTestRingMembers(t *testing.T, count int, beforeRingMember func(*ring.Config, int), afterRingMember func(*ring.Ring, int)) []*ring.Ring {
 	var ringMembers []*ring.Ring
 
 	for i := 0; i < count; i++ {
@@ -101,13 +152,19 @@ func setupTestRingMembers(t *testing.T, count int, afterRingMember func(*ring.Ri
 			seedAddresses = []string{ringMembers[0].Config.BindAddr}
 		}
 
-		ringMember, err := ring.NewRing(ring.Config{
+		config := ring.Config{
 			NodeName:         fmt.Sprintf("Ring Member %d", i),
 			BindAddr:         bindAddr,
 			RPCPort:          rpcPort,
 			VirtualNodeCount: 3,
 			SeedAddresses:    seedAddresses,
-		})
+		}
+
+		if beforeRingMember != nil {
+			beforeRingMember(&config, i)
+		}
+
+		ringMember, err := ring.NewRing(config)
 		require.NoError(t, err)
 
 		if afterRingMember != nil {

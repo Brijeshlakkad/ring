@@ -30,6 +30,7 @@ type Config struct {
 	VirtualNodeCount int
 	HashFunction     HashFunction
 	Logger           hclog.Logger
+	MemberType       MemberType
 }
 
 func (c Config) RPCAddr() (string, error) {
@@ -84,7 +85,7 @@ func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 	}
 
 	// Add this node on the ring.
-	err = r.router.Join(rpcAddr, r.VirtualNodeCount)
+	err = r.router.Join(rpcAddr, r.VirtualNodeCount, r.MemberType)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +110,7 @@ func (r *Ring) setupMembership() (func() error, error) {
 		Tags: map[string]string{
 			"rpc_addr":      rpcAddr,
 			"virtual_nodes": strconv.Itoa(r.Config.VirtualNodeCount),
+			"member_type":   strconv.Itoa(int(r.Config.MemberType)),
 		},
 		SeedAddresses: r.Config.SeedAddresses,
 	})
@@ -153,6 +155,14 @@ func (r *Ring) GetNode(objKey string) (interface{}, bool) {
 	return r.router.Get(objKey)
 }
 
+// GetLoadBalancers gets the load balancers of the ring.
+func (r *Ring) GetLoadBalancers() []string {
+	if r.shutdown {
+		return nil
+	}
+	return r.router.GetLoadBalancers()
+}
+
 func (r *Ring) Shutdown() error {
 	r.shutdownLock.Lock()
 	defer r.shutdownLock.Unlock()
@@ -187,24 +197,24 @@ func newHandlerWrapper(config *handlerWrapperConfig) *handlerWrapper {
 	}
 }
 
-func (h *handlerWrapper) Join(rpcAddr string, vNodeCount int) error {
+func (h *handlerWrapper) Join(rpcAddr string, vNodeCount int, memberType MemberType) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for listenerId, listener := range h.listeners {
-		if err := listener.Join(rpcAddr, vNodeCount); err != nil {
+		if err := listener.Join(rpcAddr, vNodeCount, memberType); err != nil {
 			h.logger.Error(fmt.Sprintf("Error while joining %s", listenerId), "error", err)
 		}
 	}
 	return nil
 }
 
-func (h *handlerWrapper) Leave(rpcAddr string) error {
+func (h *handlerWrapper) Leave(rpcAddr string, memberType MemberType) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for listenerId, listener := range h.listeners {
-		if err := listener.Leave(rpcAddr); err != nil {
+		if err := listener.Leave(rpcAddr, memberType); err != nil {
 			h.logger.Error(fmt.Sprintf("Error while leaving %s", listenerId), "error", err)
 		}
 	}

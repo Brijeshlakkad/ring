@@ -19,7 +19,12 @@ type consistentHashRouter struct {
 	virtualNodes map[uint64]*virtualNode
 	sortedMap    []uint64
 
-	lock sync.RWMutex
+	lock          sync.RWMutex
+	loadBalancers map[string]*loadBalancer
+}
+
+type loadBalancer struct {
+	rpcAddr string
 }
 
 type parentNode struct {
@@ -37,66 +42,79 @@ func newConsistentHashRouter(hashFunction HashFunction) (*consistentHashRouter, 
 		hashFunction = &MD5HashFunction{}
 	}
 	return &consistentHashRouter{
-		hashFunction: hashFunction,
-		realNodes:    map[uint64]*parentNode{},
-		virtualNodes: map[uint64]*virtualNode{},
-		sortedMap:    []uint64{},
+		hashFunction:  hashFunction,
+		realNodes:     map[uint64]*parentNode{},
+		virtualNodes:  map[uint64]*virtualNode{},
+		sortedMap:     []uint64{},
+		loadBalancers: map[string]*loadBalancer{},
 	}, nil
 }
 
-func (c *consistentHashRouter) Join(nodeKey string, vNodeCount int) error {
+func (c *consistentHashRouter) Join(nodeKey string, vNodeCount int, memberType MemberType) error {
 	if vNodeCount < 0 {
 		return errors.New("virtual node count should be equal or greater than zero")
 	}
-
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	pNode := c.createOrGetParentNode(nodeKey)
-	startIndex := len(pNode.virtualNodes)
-	for i := startIndex; i < startIndex+vNodeCount; i++ {
-		vNode := virtualNode{
-			parentNode: *pNode,
-			index:      i,
+	if memberType == ShardMember {
+		pNode := c.createOrGetParentNode(nodeKey)
+		startIndex := len(pNode.virtualNodes)
+		for i := startIndex; i < startIndex+vNodeCount; i++ {
+			vNode := virtualNode{
+				parentNode: *pNode,
+				index:      i,
+			}
+			hash := c.hashFunction.hash(vNode.GetKey())
+
+			c.sortedMap = append(c.sortedMap, hash)
+			pNode.virtualNodes[hash] = &vNode
+			c.virtualNodes[hash] = &vNode
+
+			// Enables to do binary search
+			sort.Slice(c.sortedMap, func(i, j int) bool {
+				return c.sortedMap[i] < c.sortedMap[j]
+			})
 		}
-		hash := c.hashFunction.hash(vNode.GetKey())
-
-		c.sortedMap = append(c.sortedMap, hash)
-		pNode.virtualNodes[hash] = &vNode
-		c.virtualNodes[hash] = &vNode
-
-		// Enables to do binary search
-		sort.Slice(c.sortedMap, func(i, j int) bool {
-			return c.sortedMap[i] < c.sortedMap[j]
-		})
+		return nil
+	} else if memberType == LoadBalancerMember {
+		c.loadBalancers[nodeKey] = &loadBalancer{
+			rpcAddr: nodeKey,
+		}
+		return nil
 	}
 	return nil
 }
 
-func (c *consistentHashRouter) Leave(nodeKey string) error {
+func (c *consistentHashRouter) Leave(nodeKey string, memberType MemberType) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	pNode, found := c.getParentNode(nodeKey)
-	if found {
-		for _, vNode := range pNode.virtualNodes {
-			hash := c.hashFunction.hash(vNode.GetKey())
-			delete(pNode.virtualNodes, hash)
+	if memberType == ShardMember {
+		pNode, found := c.getParentNode(nodeKey)
+		if found {
+			for _, vNode := range pNode.virtualNodes {
+				hash := c.hashFunction.hash(vNode.GetKey())
+				delete(pNode.virtualNodes, hash)
 
-			// Dichotomous search to the find the virtual node
-			index := sort.Search(len(c.sortedMap), func(i int) bool {
-				return c.sortedMap[i] == hash
-			})
+				// Dichotomous search to the find the virtual node
+				index := sort.Search(len(c.sortedMap), func(i int) bool {
+					return c.sortedMap[i] == hash
+				})
 
-			if index < len(c.sortedMap) {
-				c.sortedMap = append(c.sortedMap[:index], c.sortedMap[index+1:]...)
+				if index < len(c.sortedMap) {
+					c.sortedMap = append(c.sortedMap[:index], c.sortedMap[index+1:]...)
+				}
 			}
-		}
-		delete(c.realNodes, c.hashFunction.hash(pNode.GetKey()))
+			delete(c.realNodes, c.hashFunction.hash(pNode.GetKey()))
 
-		return nil
+			return nil
+		}
+		return ErrRealNodeNotFound
+	} else if memberType == LoadBalancerMember {
+		delete(c.loadBalancers, nodeKey)
 	}
-	return ErrRealNodeNotFound
+	return nil
 }
 
 func (c *consistentHashRouter) createOrGetParentNode(nodeKey string) *parentNode {
@@ -142,6 +160,17 @@ func (c *consistentHashRouter) Get(key string) (interface{}, bool) {
 
 	// virtual nodes -> physical nodes mapping
 	return c.virtualNodes[c.sortedMap[index]].getRealNode(), true
+}
+
+func (c *consistentHashRouter) GetLoadBalancers() []string {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	var loadBalancers []string
+	for _, loadbalancer := range c.loadBalancers {
+		loadBalancers = append(loadBalancers, loadbalancer.rpcAddr)
+	}
+	return loadBalancers
 }
 
 func (c *consistentHashRouter) GetVirtualNodes(key string) ([]virtualNode, bool) {

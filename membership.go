@@ -85,17 +85,29 @@ func (m *membership) handleJoin(member serf.Member) {
 	if err != nil {
 		m.logError(err, "failed to join", member)
 	}
+	memberTypeInt, err := strconv.ParseUint(member.Tags["member_type"], 10, 64)
+	if err != nil {
+		m.logError(err, "failed to join", member)
+	}
+	memberType := MemberType(uint8(memberTypeInt))
 	if err := m.handler.Join(
 		member.Tags["rpc_addr"],
 		vNodeCount,
+		memberType,
 	); err != nil {
 		m.logError(err, "failed to join", member)
 	}
 }
 
 func (m *membership) handleLeave(member serf.Member) {
+	memberTypeInt, err := strconv.ParseUint(member.Tags["member_type"], 10, 64)
+	if err != nil {
+		m.logError(err, "failed to join", member)
+	}
+	memberType := MemberType(uint8(memberTypeInt))
 	if err := m.handler.Leave(
 		member.Tags["rpc_addr"],
+		memberType,
 	); err != nil {
 		m.logError(err, "failed to leave", member)
 	}
