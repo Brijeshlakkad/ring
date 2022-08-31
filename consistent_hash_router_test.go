@@ -53,13 +53,15 @@ func TestVirtualNode_GetKey(t *testing.T) {
 
 	// 4 virtual nodes
 	vNodeCount := 4
-	err = ch.Join(nodeKey0, setupTags(t, vNodeCount, ShardMember))
+	tags := setupTags(t, vNodeCount, ShardMember)
+	tags["node_name"] = nodeKey0
+	err = ch.Join(nodeKey0, tags)
 	require.NoError(t, err)
 
-	nodeInterface, found := ch.Get(fakeData)
+	nodeTags, found := ch.Get(fakeData)
 	require.Equal(t, true, found)
 
-	receivedNodeKey := nodeInterface.(string)
+	receivedNodeKey := nodeTags["node_name"]
 	require.Equal(t, nodeKey0, receivedNodeKey)
 	vNodes, found := ch.GetVirtualNodes(receivedNodeKey)
 	require.Equal(t, true, found)
@@ -72,15 +74,18 @@ func TestConsistentHashRouter_Leave(t *testing.T) {
 
 	// 1 virtual nodes
 	vNodeCount := 1
-	err = ch.Join(nodeKey0, setupTags(t, vNodeCount, ShardMember))
+	tags := setupTags(t, vNodeCount, ShardMember)
+	tags["node_name"] = nodeKey0
+	err = ch.Join(nodeKey0, tags)
 
 	require.NoError(t, err)
 
-	nodeInterface, found := ch.Get(fakeData)
+	nodeTags, found := ch.Get(fakeData)
 	require.Equal(t, true, found)
 
-	receivedNodeKey := nodeInterface.(string)
+	receivedNodeKey := nodeTags["node_name"]
 	require.Equal(t, nodeKey0, receivedNodeKey)
+
 	vNodes, found := ch.GetVirtualNodes(receivedNodeKey)
 	require.Equal(t, true, found)
 	require.Equal(t, vNodeCount, len(vNodes))
@@ -157,7 +162,6 @@ func TestConsistentHashRouter_Join_VirtualNodes(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, totalNodes, len(ch.sortedMap))
-
 	require.Equal(t, totalNodes, len(pNode.virtualNodes))
 }
 
