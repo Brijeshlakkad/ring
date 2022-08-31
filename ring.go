@@ -2,7 +2,6 @@ package ring
 
 import (
 	"fmt"
-	"net"
 	"strconv"
 	"sync"
 
@@ -24,21 +23,13 @@ type Ring struct {
 
 type Config struct {
 	BindAddr         string
-	RPCPort          int
+	Tags             map[string]string
 	NodeName         string
 	SeedAddresses    []string
 	VirtualNodeCount int
 	HashFunction     HashFunction
 	Logger           hclog.Logger
 	MemberType       MemberType
-}
-
-func (c Config) RPCAddr() (string, error) {
-	host, _, err := net.SplitHostPort(c.BindAddr)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s:%d", host, c.RPCPort), nil
 }
 
 func NewRing(config Config) (*Ring, error) {
@@ -78,14 +69,8 @@ func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	rpcAddr, err := r.RPCAddr()
-	if err != nil {
-		return nil, err
-	}
-
 	// Add this node on the ring.
-	err = r.router.Join(rpcAddr, r.VirtualNodeCount, r.MemberType)
+	err = r.router.Join(r.NodeName, r.tags())
 	if err != nil {
 		return nil, err
 	}
@@ -100,18 +85,11 @@ func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 }
 
 func (r *Ring) setupMembership() (func() error, error) {
-	rpcAddr, err := r.Config.RPCAddr()
-	if err != nil {
-		return nil, err
-	}
+	var err error
 	r.membership, err = newMemberShip(r.handler, MembershipConfig{
-		NodeName: r.Config.NodeName,
-		BindAddr: r.Config.BindAddr,
-		Tags: map[string]string{
-			"rpc_addr":      rpcAddr,
-			"virtual_nodes": strconv.Itoa(r.Config.VirtualNodeCount),
-			"member_type":   strconv.Itoa(int(r.Config.MemberType)),
-		},
+		NodeName:      r.Config.NodeName,
+		BindAddr:      r.Config.BindAddr,
+		Tags:          r.tags(),
 		SeedAddresses: r.Config.SeedAddresses,
 	})
 	if err != nil {
@@ -180,6 +158,21 @@ func (r *Ring) Shutdown() error {
 	return nil
 }
 
+const (
+	memberTypeJSON   = "member_type"
+	virtualNodesJSON = "virtual_nodes"
+)
+
+func (r *Ring) tags() map[string]string {
+	tagsToBeSent := make(map[string]string)
+	for k, v := range r.Tags {
+		tagsToBeSent[k] = v
+	}
+	tagsToBeSent[virtualNodesJSON] = strconv.Itoa(r.Config.VirtualNodeCount)
+	tagsToBeSent[memberTypeJSON] = strconv.Itoa(int(r.Config.MemberType))
+	return tagsToBeSent
+}
+
 type handlerWrapper struct {
 	listeners map[string]Handler
 	lock      sync.Mutex
@@ -197,24 +190,24 @@ func newHandlerWrapper(config *handlerWrapperConfig) *handlerWrapper {
 	}
 }
 
-func (h *handlerWrapper) Join(rpcAddr string, vNodeCount int, memberType MemberType) error {
+func (h *handlerWrapper) Join(nodeName string, tags map[string]string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for listenerId, listener := range h.listeners {
-		if err := listener.Join(rpcAddr, vNodeCount, memberType); err != nil {
+		if err := listener.Join(nodeName, tags); err != nil {
 			h.logger.Error(fmt.Sprintf("Error while joining %s", listenerId), "error", err)
 		}
 	}
 	return nil
 }
 
-func (h *handlerWrapper) Leave(rpcAddr string, memberType MemberType) error {
+func (h *handlerWrapper) Leave(rpcAddr string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for listenerId, listener := range h.listeners {
-		if err := listener.Leave(rpcAddr, memberType); err != nil {
+		if err := listener.Leave(rpcAddr); err != nil {
 			h.logger.Error(fmt.Sprintf("Error while leaving %s", listenerId), "error", err)
 		}
 	}

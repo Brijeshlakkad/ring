@@ -2,8 +2,8 @@ package ring
 
 // Handler interface to get notified when a new member joins or existing member leaves the ring.
 type Handler interface {
-	Join(nodeKey string, vNodeCount int, memberType MemberType) error
-	Leave(nodeKey string, memberType MemberType) error
+	Join(nodeName string, tags map[string]string) error
+	Leave(nodeName string) error
 }
 
 // HashFunction hashes key (string) to uint64.

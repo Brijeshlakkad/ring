@@ -33,7 +33,7 @@ func TestMembership(t *testing.T) {
 			1 == len(handler.leaves)
 	}, 3*time.Second, 250*time.Millisecond)
 
-	require.Equal(t, m[2].Tags["rpc_addr"], <-handler.leaves)
+	require.Equal(t, m[2].NodeName, <-handler.leaves)
 }
 
 func setupMember(t *testing.T, members []*membership, memberType MemberType) ([]*membership, *handler) {
@@ -68,18 +68,14 @@ type handler struct {
 	leaves chan string
 }
 
-func (h *handler) Join(nodeKey string, vNodeCount int, memberType MemberType) error {
+func (h *handler) Join(nodeKey string, tags map[string]string) error {
 	if h.joins != nil {
-		h.joins <- map[string]string{
-			"rpc_addr":      nodeKey,
-			"virtual_nodes": strconv.Itoa(vNodeCount),
-			"member_type":   strconv.Itoa(int(memberType)),
-		}
+		h.joins <- tags
 	}
 	return nil
 }
 
-func (h *handler) Leave(id string, memberType MemberType) error {
+func (h *handler) Leave(id string) error {
 	if h.leaves != nil {
 		h.leaves <- id
 	}

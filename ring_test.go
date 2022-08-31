@@ -2,7 +2,6 @@ package ring_test
 
 import (
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -41,8 +40,8 @@ func TestRing_Listener(t *testing.T) {
 	}, 3*time.Second, 250*time.Millisecond)
 
 	memberId := <-h.joins
-	memberAddr, err := ringMembers[1].RPCAddr()
-	require.NoError(t, err)
+	memberAddr, ok := ringMembers[1].Tags["rpc_addr"]
+	require.True(t, ok)
 
 	require.Equal(t, memberAddr, memberId["rpc_addr"])
 
@@ -87,10 +86,10 @@ func TestRing_GetLoadBalancers(t *testing.T) {
 	loadBalancers := ringMembers[leaderIndex].GetLoadBalancers()
 	require.Equal(t, 1, len(loadBalancers))
 
-	loadBalancerRPCAddr, err := ringMembers[loadBalancerIndex].RPCAddr()
-	require.NoError(t, err)
+	_, ok := ringMembers[loadBalancerIndex].Tags["rpc_addr"]
+	require.True(t, ok)
 
-	require.Equal(t, loadBalancerRPCAddr, loadBalancers[0])
+	require.Equal(t, ringMembers[loadBalancerIndex].NodeName, loadBalancers[0])
 
 	defer func() {
 		for _, ringMember := range ringMembers {
@@ -105,18 +104,14 @@ type handler struct {
 	leaves chan string
 }
 
-func (h *handler) Join(nodeKey string, vNodeCount int, memberType ring.MemberType) error {
+func (h *handler) Join(nodeKey string, tags map[string]string) error {
 	if h.joins != nil {
-		h.joins <- map[string]string{
-			"rpc_addr":      nodeKey,
-			"virtual_nodes": strconv.Itoa(vNodeCount),
-			"member_type":   strconv.Itoa(int(memberType)),
-		}
+		h.joins <- tags
 	}
 	return nil
 }
 
-func (h *handler) Leave(id string, memberType ring.MemberType) error {
+func (h *handler) Leave(id string) error {
 	if h.leaves != nil {
 		h.leaves <- id
 	}
@@ -153,9 +148,11 @@ func setupTestRingMembers(t *testing.T, count int, beforeRingMember func(*ring.C
 		}
 
 		config := ring.Config{
-			NodeName:         fmt.Sprintf("Ring Member %d", i),
-			BindAddr:         bindAddr,
-			RPCPort:          rpcPort,
+			NodeName: fmt.Sprintf("Ring Member %d", i),
+			BindAddr: bindAddr,
+			Tags: map[string]string{
+				"rpc_addr": fmt.Sprintf("localhost:%d", rpcPort),
+			},
 			VirtualNodeCount: 3,
 			SeedAddresses:    seedAddresses,
 		}

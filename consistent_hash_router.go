@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -50,7 +51,16 @@ func newConsistentHashRouter(hashFunction HashFunction) (*consistentHashRouter, 
 	}, nil
 }
 
-func (c *consistentHashRouter) Join(nodeKey string, vNodeCount int, memberType MemberType) error {
+func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) error {
+	vNodeCount, err := strconv.Atoi(tags[virtualNodesJSON])
+	if err != nil {
+		return err
+	}
+	memberTypeInt, err := strconv.ParseUint(tags[memberTypeJSON], 10, 64)
+	if err != nil {
+		return err
+	}
+	memberType := MemberType(uint8(memberTypeInt))
 	if vNodeCount < 0 {
 		return errors.New("virtual node count should be equal or greater than zero")
 	}
@@ -86,32 +96,29 @@ func (c *consistentHashRouter) Join(nodeKey string, vNodeCount int, memberType M
 	return nil
 }
 
-func (c *consistentHashRouter) Leave(nodeKey string, memberType MemberType) error {
+func (c *consistentHashRouter) Leave(nodeKey string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if memberType == ShardMember {
-		pNode, found := c.getParentNode(nodeKey)
-		if found {
-			for _, vNode := range pNode.virtualNodes {
-				hash := c.hashFunction.hash(vNode.GetKey())
-				delete(pNode.virtualNodes, hash)
+	pNode, found := c.getParentNode(nodeKey)
+	if found {
+		for _, vNode := range pNode.virtualNodes {
+			hash := c.hashFunction.hash(vNode.GetKey())
+			delete(pNode.virtualNodes, hash)
 
-				// Dichotomous search to the find the virtual node
-				index := sort.Search(len(c.sortedMap), func(i int) bool {
-					return c.sortedMap[i] == hash
-				})
+			// Dichotomous search to the find the virtual node
+			index := sort.Search(len(c.sortedMap), func(i int) bool {
+				return c.sortedMap[i] == hash
+			})
 
-				if index < len(c.sortedMap) {
-					c.sortedMap = append(c.sortedMap[:index], c.sortedMap[index+1:]...)
-				}
+			if index < len(c.sortedMap) {
+				c.sortedMap = append(c.sortedMap[:index], c.sortedMap[index+1:]...)
 			}
-			delete(c.realNodes, c.hashFunction.hash(pNode.GetKey()))
-
-			return nil
 		}
-		return ErrRealNodeNotFound
-	} else if memberType == LoadBalancerMember {
+		delete(c.realNodes, c.hashFunction.hash(pNode.GetKey()))
+
+		return nil
+	} else {
 		delete(c.loadBalancers, nodeKey)
 	}
 	return nil
