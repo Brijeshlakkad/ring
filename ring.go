@@ -126,7 +126,7 @@ func (r *Ring) RemoveListener(listenerId string) {
 }
 
 // GetNode gets the node responsible for the given #objKey.
-func (r *Ring) GetNode(objKey string) (interface{}, bool) {
+func (r *Ring) GetNode(objKey string) (map[string]string, bool) {
 	if r.shutdown {
 		return nil, false
 	}

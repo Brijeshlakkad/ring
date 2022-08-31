@@ -31,6 +31,7 @@ type loadBalancer struct {
 type parentNode struct {
 	nodeKey      string
 	virtualNodes map[uint64]*virtualNode
+	tags         map[string]string
 }
 
 func (p *parentNode) GetKey() string {
@@ -61,14 +62,19 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 		return err
 	}
 	memberType := MemberType(uint8(memberTypeInt))
+
 	if vNodeCount < 0 {
 		return errors.New("virtual node count should be equal or greater than zero")
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	// remove unnecessary information.
+	delete(tags, virtualNodesJSON)
+
 	if memberType == ShardMember {
 		pNode := c.createOrGetParentNode(nodeKey)
+		pNode.tags = tags
 		startIndex := len(pNode.virtualNodes)
 		for i := startIndex; i < startIndex+vNodeCount; i++ {
 			vNode := virtualNode{
@@ -145,7 +151,7 @@ func (c *consistentHashRouter) getParentNode(nodeKey string) (*parentNode, bool)
 }
 
 // Get clockwise nearest real node based on the key
-func (c *consistentHashRouter) Get(key string) (interface{}, bool) {
+func (c *consistentHashRouter) Get(key string) (map[string]string, bool) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -166,7 +172,7 @@ func (c *consistentHashRouter) Get(key string) (interface{}, bool) {
 	}) % len(c.sortedMap)
 
 	// virtual nodes -> physical nodes mapping
-	return c.virtualNodes[c.sortedMap[index]].getRealNode(), true
+	return c.virtualNodes[c.sortedMap[index]].getTags(), true
 }
 
 func (c *consistentHashRouter) GetLoadBalancers() []string {
@@ -207,6 +213,10 @@ func (v *virtualNode) isVirtualNodeOf(key string) bool {
 
 func (v *virtualNode) getRealNode() string {
 	return v.parentNode.GetKey()
+}
+
+func (v *virtualNode) getTags() map[string]string {
+	return v.parentNode.tags
 }
 
 // MD5HashFunction Default hash function
