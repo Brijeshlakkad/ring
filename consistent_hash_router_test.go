@@ -313,6 +313,7 @@ func TestConsistentHashRouter_HandleResharding_MultipleJoin(t *testing.T) {
 		return newEvents[i].start.(uint64) < newEvents[j].start.(uint64)
 	})
 
+	// The below code to check the responsibilities against the ring: 1 - 2 - 4 - 5 - 10 - 11 - 15 - 20 - 21
 	require.Equal(t, newNode, newEvents[0].newNode)
 	require.Equal(t, uint64(expectedHashes[0]), newEvents[0].start)
 	require.Equal(t, uint64(expectedHashes[len(expectedHashes)-1]), newEvents[0].end)

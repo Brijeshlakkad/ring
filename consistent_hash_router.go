@@ -357,6 +357,7 @@ func (sch *shardChangeHandler) notifyListeners(batch []ShardResponsibility) {
 	}
 }
 
+// ShardResponsibility to determine if an object should get be transferred to the given node.
 type ShardResponsibility struct {
 	start        uint64
 	end          interface{}
@@ -390,4 +391,12 @@ func (s *ShardResponsibility) Transfer(objectKey string) bool {
 		return objectHash > s.end.(uint64)
 	}
 	return false
+}
+
+func (s *ShardResponsibility) ResponsibleNodeTags() map[string]string {
+	return s.tags
+}
+
+func (s *ShardResponsibility) ResponsibleNode() string {
+	return s.newNode
 }
