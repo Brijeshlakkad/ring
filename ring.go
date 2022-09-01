@@ -120,6 +120,16 @@ func (r *Ring) RemoveListener(listenerId string) {
 	delete(r.handler.listeners, listenerId)
 }
 
+// AddResponsibilityChangeListener registers the listener that will be called when the current node responsibility changes due to joining of the new nodes.
+func (r *Ring) AddResponsibilityChangeListener(listenerId string, handler ShardResponsibilityHandler) {
+	r.router.AddListener(listenerId, handler)
+}
+
+// RemoveResponsibilityChangeListener removes the listener from the router using the listenerId.
+func (r *Ring) RemoveResponsibilityChangeListener(listenerId string) {
+	r.router.RemoveListener(listenerId)
+}
+
 // GetNode gets the node responsible for the given #objKey.
 func (r *Ring) GetNode(objKey string) (map[string]string, bool) {
 	if r.shutdown {

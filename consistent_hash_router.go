@@ -53,7 +53,7 @@ func newConsistentHashRouter(hashFunction HashFunction, nodeKey string, tags map
 		sortedMap:     []uint64{},
 		loadBalancers: map[string]*loadBalancer{},
 		shardChangeHandler: &shardChangeHandler{
-			listeners: make(map[string]ShardChangeHandler),
+			listeners: make(map[string]ShardResponsibilityHandler),
 		},
 		currentNodeKey: nodeKey,
 	}
@@ -330,18 +330,28 @@ func (m *MD5HashFunction) hash(name string) uint64 {
 }
 
 type shardChangeHandler struct {
-	listeners map[string]ShardChangeHandler
+	listeners map[string]ShardResponsibilityHandler
+	lock      sync.Mutex
 }
 
-func (sch *shardChangeHandler) AddListener(listenerId string, listener ShardChangeHandler) {
+func (sch *shardChangeHandler) AddListener(listenerId string, listener ShardResponsibilityHandler) {
+	sch.lock.Lock()
+	defer sch.lock.Lock()
+
 	sch.listeners[listenerId] = listener
 }
 
 func (sch *shardChangeHandler) RemoveListener(listenerId string) {
+	sch.lock.Lock()
+	defer sch.lock.Lock()
+
 	delete(sch.listeners, listenerId)
 }
 
 func (sch *shardChangeHandler) notifyListeners(batch []ShardResponsibility) {
+	sch.lock.Lock()
+	defer sch.lock.Lock()
+
 	for _, listener := range sch.listeners {
 		listener.OnChange(batch)
 	}
@@ -371,7 +381,7 @@ func newShardResponsibility(
 	}
 }
 
-func (s *ShardResponsibility) transfer(objectKey string) bool {
+func (s *ShardResponsibility) Transfer(objectKey string) bool {
 	objectHash := s.hashFunction.hash(objectKey)
 	if objectHash <= s.start {
 		if s.end == nil {
