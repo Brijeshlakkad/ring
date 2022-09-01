@@ -65,12 +65,7 @@ func NewRing(config Config) (*Ring, error) {
 
 func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 	var err error
-	r.router, err = newConsistentHashRouter(r.HashFunction)
-	if err != nil {
-		return nil, err
-	}
-	// Add this node on the ring.
-	err = r.router.Join(r.NodeName, r.tags())
+	r.router, err = newConsistentHashRouter(r.HashFunction, r.NodeName, r.tags())
 	if err != nil {
 		return nil, err
 	}

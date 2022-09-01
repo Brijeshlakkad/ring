@@ -22,6 +22,9 @@ type consistentHashRouter struct {
 
 	lock          sync.RWMutex
 	loadBalancers map[string]*loadBalancer
+
+	*shardChangeHandler
+	currentNodeKey string
 }
 
 type loadBalancer struct {
@@ -38,18 +41,27 @@ func (p *parentNode) GetKey() string {
 	return p.nodeKey
 }
 
-func newConsistentHashRouter(hashFunction HashFunction) (*consistentHashRouter, error) {
+func newConsistentHashRouter(hashFunction HashFunction, nodeKey string, tags map[string]string) (*consistentHashRouter, error) {
 	if hashFunction == nil {
 		// Default hash function
 		hashFunction = &MD5HashFunction{}
 	}
-	return &consistentHashRouter{
+	ch := &consistentHashRouter{
 		hashFunction:  hashFunction,
 		realNodes:     map[uint64]*parentNode{},
 		virtualNodes:  map[uint64]*virtualNode{},
 		sortedMap:     []uint64{},
 		loadBalancers: map[string]*loadBalancer{},
-	}, nil
+		shardChangeHandler: &shardChangeHandler{
+			listeners: make(map[string]ShardChangeHandler),
+		},
+		currentNodeKey: nodeKey,
+	}
+	err := ch.Join(nodeKey, tags)
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
 }
 
 func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) error {
@@ -76,21 +88,34 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 		pNode := c.createOrGetParentNode(nodeKey)
 		pNode.tags = tags
 		startIndex := len(pNode.virtualNodes)
+
+		var newNodes []uint64
+
+		startup := len(c.sortedMap) == 0
+
+		// Nodes that will be re-sharded.
 		for i := startIndex; i < startIndex+vNodeCount; i++ {
 			vNode := virtualNode{
-				parentNode: *pNode,
+				parentNode: pNode,
 				index:      i,
 			}
-			hash := c.hashFunction.hash(vNode.GetKey())
+			newNodeHash := c.hashFunction.hash(vNode.GetKey())
 
-			c.sortedMap = append(c.sortedMap, hash)
-			pNode.virtualNodes[hash] = &vNode
-			c.virtualNodes[hash] = &vNode
+			c.sortedMap = append(c.sortedMap, newNodeHash)
+			pNode.virtualNodes[newNodeHash] = &vNode
+			c.virtualNodes[newNodeHash] = &vNode
 
 			// Enables to do binary search
 			sort.Slice(c.sortedMap, func(i, j int) bool {
 				return c.sortedMap[i] < c.sortedMap[j]
 			})
+
+			newNodes = append(newNodes, newNodeHash)
+		}
+
+		// If the new node is not the only node on the ring.
+		if !startup && len(newNodes) > 0 {
+			c.handleResharding(newNodes)
 		}
 		return nil
 	} else if memberType == LoadBalancerMember {
@@ -100,6 +125,67 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 		return nil
 	}
 	return nil
+}
+
+type newHashNode struct {
+	hash uint64
+	prev *newHashNode
+	next *newHashNode
+}
+
+func (c *consistentHashRouter) handleResharding(newNodes []uint64) {
+	// Sort the new nodes.
+	sort.Slice(newNodes, func(i, j int) bool {
+		return newNodes[i] < newNodes[j]
+	})
+
+	nodeHashMap := make(map[uint64]uint64)
+	newNodeMap := make(map[uint64]bool)
+
+	for _, newNode := range newNodes {
+		newNodeMap[newNode] = true
+	}
+
+	for _, newNodeHash := range newNodes {
+		// Dichotomous lookup to find the previous node which will send its data to the new node.
+		previousNodeIndex := binarySearchUint64(c.sortedMap, 0, len(c.sortedMap), newNodeHash)
+		if previousNodeIndex == 0 {
+			previousNodeIndex = len(c.sortedMap) - 1
+		} else {
+			previousNodeIndex -= 1
+		}
+
+		nodeHashMap[newNodeHash] = c.sortedMap[previousNodeIndex]
+	}
+
+	affectedNodeMap := make(map[uint64][]uint64)
+
+	for nodeHash, previousNodeHash := range nodeHashMap {
+		for newNodeMap[previousNodeHash] {
+			// Find previous node that is not the new node.
+			previousNodeHash = nodeHashMap[previousNodeHash]
+		}
+		affectedNodeMap[previousNodeHash] = append(affectedNodeMap[previousNodeHash], nodeHash)
+	}
+
+	// Notify listeners for the current node changes only.
+	for currentNodeHash, newNodesOfCurrent := range affectedNodeMap {
+		if c.virtualNodes[currentNodeHash].getRealNode() == c.currentNodeKey {
+			sort.Slice(newNodesOfCurrent, func(i, j int) bool {
+				return newNodesOfCurrent[i] < newNodesOfCurrent[j]
+			})
+
+			for i := 0; i < len(newNodesOfCurrent); i++ {
+				var endKey interface{}
+				if i+1 == len(newNodesOfCurrent) {
+					endKey = nil
+				} else {
+					endKey = newNodesOfCurrent[i+1]
+				}
+				c.notifyListeners(newNodesOfCurrent[i], endKey, c.virtualNodes[newNodesOfCurrent[i]].getRealNode())
+			}
+		}
+	}
 }
 
 func (c *consistentHashRouter) Leave(nodeKey string) error {
@@ -199,7 +285,7 @@ func (c *consistentHashRouter) GetVirtualNodes(key string) ([]virtualNode, bool)
 
 // virtualNode allows to distribute data across nodes at a finer granularity than can be easily achieved using a single-token architecture.
 type virtualNode struct {
-	parentNode parentNode
+	parentNode *parentNode
 	index      int
 }
 
@@ -228,4 +314,22 @@ func (m *MD5HashFunction) hash(name string) uint64 {
 	data := []byte(name)
 	b := md5.Sum(data)
 	return binary.LittleEndian.Uint64(b[:])
+}
+
+type shardChangeHandler struct {
+	listeners map[string]ShardChangeHandler
+}
+
+func (sch *shardChangeHandler) AddListener(listenerId string, listener ShardChangeHandler) {
+	sch.listeners[listenerId] = listener
+}
+
+func (sch *shardChangeHandler) RemoveListener(listenerId string) {
+	delete(sch.listeners, listenerId)
+}
+
+func (sch *shardChangeHandler) notifyListeners(start interface{}, end interface{}, newNode string) {
+	for _, listener := range sch.listeners {
+		listener.OnChange(start, end, newNode)
+	}
 }
