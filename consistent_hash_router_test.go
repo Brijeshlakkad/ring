@@ -348,12 +348,14 @@ type testChangeItem struct {
 	newNode string
 }
 
-func (ch *testChangeHandler) OnChange(start interface{}, end interface{}, newNode string) {
+func (ch *testChangeHandler) OnChange(batch []ShardResponsibility) {
 	if ch.events != nil {
-		ch.events <- &testChangeItem{
-			start:   start,
-			end:     end,
-			newNode: newNode,
+		for _, event := range batch {
+			ch.events <- &testChangeItem{
+				start:   event.start,
+				end:     event.end,
+				newNode: event.newNode,
+			}
 		}
 	}
 }

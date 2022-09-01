@@ -21,5 +21,5 @@ const (
 // ShardChangeHandler to listen to change event when any new member joins the ring at the next position of the current node.
 type ShardChangeHandler interface {
 	// OnChange This will be fired if the current node is affected by the new members.
-	OnChange(start interface{}, end interface{}, newNode string)
+	OnChange([]ShardResponsibility)
 }

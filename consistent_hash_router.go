@@ -168,7 +168,8 @@ func (c *consistentHashRouter) handleResharding(newNodes []uint64) {
 		affectedNodeMap[previousNodeHash] = append(affectedNodeMap[previousNodeHash], nodeHash)
 	}
 
-	// Notify listeners for the current node changes only.
+	// Build a map to send the changes in a single batch.
+	var batch []ShardResponsibility
 	for currentNodeHash, newNodesOfCurrent := range affectedNodeMap {
 		if c.virtualNodes[currentNodeHash].getRealNode() == c.currentNodeKey {
 			sort.Slice(newNodesOfCurrent, func(i, j int) bool {
@@ -182,10 +183,22 @@ func (c *consistentHashRouter) handleResharding(newNodes []uint64) {
 				} else {
 					endKey = newNodesOfCurrent[i+1]
 				}
-				c.notifyListeners(newNodesOfCurrent[i], endKey, c.virtualNodes[newNodesOfCurrent[i]].getRealNode())
+				batch = append(batch, newShardResponsibility(
+					newNodesOfCurrent[i],
+					endKey,
+					c.virtualNodes[newNodesOfCurrent[i]].getRealNode(),
+					c.virtualNodes[newNodesOfCurrent[i]].getTags(),
+					c.hashFunction,
+				))
 			}
 		}
 	}
+	//
+	sort.Slice(batch, func(i, j int) bool {
+		return batch[i].start < batch[j].start
+	})
+	// Notify listeners for the current node changes only.
+	c.notifyListeners(batch)
 }
 
 func (c *consistentHashRouter) Leave(nodeKey string) error {
@@ -328,8 +341,43 @@ func (sch *shardChangeHandler) RemoveListener(listenerId string) {
 	delete(sch.listeners, listenerId)
 }
 
-func (sch *shardChangeHandler) notifyListeners(start interface{}, end interface{}, newNode string) {
+func (sch *shardChangeHandler) notifyListeners(batch []ShardResponsibility) {
 	for _, listener := range sch.listeners {
-		listener.OnChange(start, end, newNode)
+		listener.OnChange(batch)
 	}
+}
+
+type ShardResponsibility struct {
+	start        uint64
+	end          interface{}
+	newNode      string
+	tags         map[string]string
+	hashFunction HashFunction
+}
+
+func newShardResponsibility(
+	start interface{},
+	end interface{},
+	newNode string,
+	tags map[string]string,
+	hashFunction HashFunction,
+) ShardResponsibility {
+	return ShardResponsibility{
+		start:        start.(uint64),
+		end:          end,
+		newNode:      newNode,
+		tags:         tags,
+		hashFunction: hashFunction,
+	}
+}
+
+func (s *ShardResponsibility) transfer(objectKey string) bool {
+	objectHash := s.hashFunction.hash(objectKey)
+	if objectHash <= s.start {
+		if s.end == nil {
+			return true
+		}
+		return objectHash > s.end.(uint64)
+	}
+	return false
 }
