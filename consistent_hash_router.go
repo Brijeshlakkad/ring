@@ -336,27 +336,28 @@ type shardChangeHandler struct {
 
 func (sch *shardChangeHandler) AddListener(listenerId string, listener ShardResponsibilityHandler) {
 	sch.lock.Lock()
-	defer sch.lock.Lock()
+	defer sch.lock.Unlock()
 
 	sch.listeners[listenerId] = listener
 }
 
 func (sch *shardChangeHandler) RemoveListener(listenerId string) {
 	sch.lock.Lock()
-	defer sch.lock.Lock()
+	defer sch.lock.Unlock()
 
 	delete(sch.listeners, listenerId)
 }
 
 func (sch *shardChangeHandler) notifyListeners(batch []ShardResponsibility) {
 	sch.lock.Lock()
-	defer sch.lock.Lock()
+	defer sch.lock.Unlock()
 
 	for _, listener := range sch.listeners {
 		listener.OnChange(batch)
 	}
 }
 
+// ShardResponsibility to determine if an object should get be transferred to the given node.
 type ShardResponsibility struct {
 	start        uint64
 	end          interface{}
@@ -390,4 +391,12 @@ func (s *ShardResponsibility) Transfer(objectKey string) bool {
 		return objectHash > s.end.(uint64)
 	}
 	return false
+}
+
+func (s *ShardResponsibility) ResponsibleNodeTags() map[string]string {
+	return s.tags
+}
+
+func (s *ShardResponsibility) ResponsibleNode() string {
+	return s.newNode
 }

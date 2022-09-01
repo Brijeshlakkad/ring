@@ -18,7 +18,7 @@ const (
 	LoadBalancerMember                   // Doesn't take part in the sharding, but knows the addresses of member.
 )
 
-// ShardResponsibilityHandler to listen to change event when any new member joins the ring at the next position of the current node.
+// ShardResponsibilityHandler to listen to responsibility change when any new member joins the ring at the next position of the current node.
 type ShardResponsibilityHandler interface {
 	// OnChange This will be fired if the current node is affected by the new members.
 	OnChange([]ShardResponsibility)
