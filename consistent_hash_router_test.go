@@ -377,7 +377,7 @@ type testHashFunction struct {
 	cache map[string]uint64
 }
 
-func (h *testHashFunction) hash(key string) uint64 {
+func (h *testHashFunction) Hash(key string) uint64 {
 	return h.cache[key]
 }
 

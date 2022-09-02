@@ -8,7 +8,7 @@ type Handler interface {
 
 // HashFunction hashes key (string) to uint64.
 type HashFunction interface {
-	hash(key string) uint64
+	Hash(key string) uint64
 }
 
 type MemberType uint8

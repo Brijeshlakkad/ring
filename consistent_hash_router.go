@@ -99,7 +99,7 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 				parentNode: pNode,
 				index:      i,
 			}
-			newNodeHash := c.hashFunction.hash(vNode.GetKey())
+			newNodeHash := c.hashFunction.Hash(vNode.GetKey())
 
 			c.sortedMap = append(c.sortedMap, newNodeHash)
 			pNode.virtualNodes[newNodeHash] = &vNode
@@ -208,7 +208,7 @@ func (c *consistentHashRouter) Leave(nodeKey string) error {
 	pNode, found := c.getParentNode(nodeKey)
 	if found {
 		for _, vNode := range pNode.virtualNodes {
-			hash := c.hashFunction.hash(vNode.GetKey())
+			hash := c.hashFunction.Hash(vNode.GetKey())
 			delete(pNode.virtualNodes, hash)
 
 			// Dichotomous search to the find the virtual node
@@ -220,7 +220,7 @@ func (c *consistentHashRouter) Leave(nodeKey string) error {
 				c.sortedMap = append(c.sortedMap[:index], c.sortedMap[index+1:]...)
 			}
 		}
-		delete(c.realNodes, c.hashFunction.hash(pNode.GetKey()))
+		delete(c.realNodes, c.hashFunction.Hash(pNode.GetKey()))
 
 		return nil
 	} else {
@@ -236,13 +236,13 @@ func (c *consistentHashRouter) createOrGetParentNode(nodeKey string) *parentNode
 			nodeKey:      nodeKey,
 			virtualNodes: map[uint64]*virtualNode{},
 		}
-		c.realNodes[c.hashFunction.hash(pNode.GetKey())] = pNode
+		c.realNodes[c.hashFunction.Hash(pNode.GetKey())] = pNode
 	}
 	return pNode
 }
 
 func (c *consistentHashRouter) getParentNode(nodeKey string) (*parentNode, bool) {
-	hash := c.hashFunction.hash(nodeKey)
+	hash := c.hashFunction.Hash(nodeKey)
 	if pNode, ok := c.realNodes[hash]; ok {
 		return pNode, true
 	}
@@ -260,7 +260,7 @@ func (c *consistentHashRouter) Get(key string) (map[string]string, bool) {
 	}
 
 	// Calculate the hash value
-	hash := c.hashFunction.hash(key)
+	hash := c.hashFunction.Hash(key)
 
 	// Dichotomous lookup
 	// because the virtual nodes are reordered each time a node is added
@@ -286,7 +286,7 @@ func (c *consistentHashRouter) GetLoadBalancers() []string {
 }
 
 func (c *consistentHashRouter) GetVirtualNodes(key string) ([]virtualNode, bool) {
-	if pNode, ok := c.realNodes[c.hashFunction.hash(key)]; ok {
+	if pNode, ok := c.realNodes[c.hashFunction.Hash(key)]; ok {
 		var virtualNodes []virtualNode
 		for _, vNode := range pNode.virtualNodes {
 			virtualNodes = append(virtualNodes, *vNode)
@@ -323,7 +323,7 @@ type MD5HashFunction struct {
 	HashFunction
 }
 
-func (m *MD5HashFunction) hash(name string) uint64 {
+func (m *MD5HashFunction) Hash(name string) uint64 {
 	data := []byte(name)
 	b := md5.Sum(data)
 	return binary.LittleEndian.Uint64(b[:])
@@ -383,7 +383,7 @@ func newShardResponsibility(
 }
 
 func (s *ShardResponsibility) Transfer(objectKey string) bool {
-	objectHash := s.hashFunction.hash(objectKey)
+	objectHash := s.hashFunction.Hash(objectKey)
 	if objectHash <= s.start {
 		if s.end == nil {
 			return true
