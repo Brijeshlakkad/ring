@@ -4,15 +4,18 @@ Go utility to build Peer to Peer Architecture easily.
 
 ## Ring Configuration parameters
 
-| Parameters       | Type                                                                                                             | Usage                                                                                                                                                                                 |
-|------------------|------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| BindAddr         | string                                                                                                           | The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946". [Read more](https://www.serf.io/docs/agent/options.html#bind) |
-| Tags             | map[string]string                                                                                                | Tags will be sent with NodeName when a new member joins the ring.                                                                                                                     |
-| NodeName         | string                                                                                                           | Unique node name to identify this member.                                                                                                                                             |
-| SeedAddresses    | []string                                                                                                         | Addresses of other members to join upon start up.                                                                                                                                     |
-| VirtualNodeCount | int                                                                                                              | Number of virtual nodes to create on the ring for this member.                                                                                                                        |
-| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/f6306cf287105f18f831db916ef01823ef867fd4/types.go#L10) | Hash function to calculate position of the server on the ring.                                                                                                                        |
-| MemberType       | [MemberType](https://github.com/Brijeshlakkad/ring/blob/ff61485ce23d72714bfb67d7201dc42f4933afa1/types.go#L16)   | Type of the membership: 1. ShardMember 2. LoadBalancerMember.                                                                                                                         |
+| Parameters       | Type                                                                     | Usage                                                                                                                                                                                 |
+|------------------|--------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| BindAddr         | string                                                                   | The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946". [Read more](https://www.serf.io/docs/agent/options.html#bind) |
+| Tags             | map[string]string                                                        | Tags will be sent with NodeName when a new member joins the ring.                                                                                                                     |
+| NodeName         | string                                                                   | Unique node name to identify this member.                                                                                                                                             |
+| SeedAddresses    | []string                                                                 | Addresses of other members to join upon start up.                                                                                                                                     |
+| VirtualNodeCount | int                                                                      | Number of virtual nodes to create on the ring for this member.                                                                                                                        |
+| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/main/types.go) | Hash function to calculate position of the server on the ring.                                                                                                                        |
+| MemberType       | [MemberType](https://github.com/Brijeshlakkad/ring/blob/main/types.go)   | Type of the membership: 1. ShardMember 2. LoadBalancerMember.                                                                                                                         |
+| StreamLayer      | [StreamLayer](https://github.com/Brijeshlakkad/ring/blob/main/types.go)  | Stream layer to communicate with other ring members to have a consensus on the order of the operations.                                                                               |
+| Timeout          | time.Duration                                                            | Sets the timeout in the network in handling connections.                                                                                                                              |
+| Logger           | [hclog.Logger](https://github.com/hashicorp/go-hclog)                    | Human readable output mode in development and JSON mode for production.                                                                                                               |
 
 ## Quick Start
 
@@ -65,7 +68,9 @@ Feel free to create a PR, I’m more than happy to review and merge it.
 - Clean code, full test coverage and minimal tech debt
 - This utility will evolve over time!!!
 
-## References (Thank you!)
+## References
 
 1. [Serf](https://github.com/hashicorp/serf)
 2. https://en.wikipedia.org/wiki/Consistent_hashing
+3. https://pdos.csail.mit.edu/6.824/papers/paxos-simple.pdf
+4. https://github.com/RichardKnop/paxos

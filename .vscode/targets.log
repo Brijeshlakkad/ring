@@ -10,7 +10,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 make: *** No rule to make target `all'.  Stop.
 
 
-# Make data base, printed on Fri Sep  2 09:01:48 2022
+# Make data base, printed on Sat Sep  3 07:49:09 2022
 
 # Variables
 
@@ -37,6 +37,7 @@ _ = /usr/bin/make
 # makefile (from `Makefile', line 1)
 MAKEFILE_LIST :=  Makefile
 # environment
+ 
 VSCODE_AMD_ENTRYPOINT = vs/workbench/api/node/extensionHostProcess
 # environment
 __CFBundleIdentifier = com.microsoft.VSCode
@@ -59,7 +60,7 @@ CONFLUENT_HOME = /Users/brijeshlakkad/confluent
 # default
 .FEATURES := target-specific order-only second-expansion else-if archives jobserver check-symlink
 # environment
-SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.1zWXIpsZkh/Listeners
+SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.ChWXdTYQ7X/Listeners
 # automatic
 %F = $(notdir $%)
 # environment
@@ -163,7 +164,7 @@ LANG = C
 # environment
 JAVA_8_HOME = /Library/Java/JavaVirtualMachines/adoptopenjdk-8.jdk/Contents/Home
 # environment
-VSCODE_PID = 1364
+VSCODE_PID = 1150
 # variable set hash-table stats:
 # Load=75/1024=7%, Rehash=0, Collisions=3/99=3%
 
@@ -173,9 +174,10 @@ VSCODE_PID = 1364
 
 # Directories
 
-# . (device 16777232, inode 84949235): 20 files, no impossibilities.
+# . (device 16777234, inode 84949235): 26 files, no impossibilities.
+ 
 
-# 20 files, no impossibilities in 1 directories.
+# 26 files, no impossibilities in 1 directories.
 
 # Implicit Rules
 
@@ -240,6 +242,6 @@ test:
 # strcache size: total = 4096 / max = 4096 / min = 4096 / avg = 4096
 # strcache free: total = 4087 / max = 4087 / min = 4087 / avg = 4087
 
-# Finished Make data base on Fri Sep  2 09:01:48 2022
+# Finished Make data base on Sat Sep  3 07:49:09 2022
 
  

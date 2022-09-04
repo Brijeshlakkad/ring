@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/go-hclog"
 )
@@ -19,6 +20,12 @@ type Ring struct {
 	shutdown          bool
 	shutdowns         chan struct{}
 	shutdownLock      sync.Mutex
+
+	logger    hclog.Logger
+	transport *Transport
+
+	acceptor *acceptor
+	proposor *proposer
 }
 
 type Config struct {
@@ -30,26 +37,40 @@ type Config struct {
 	HashFunction     HashFunction
 	Logger           hclog.Logger
 	MemberType       MemberType
+	// Dialer
+	StreamLayer StreamLayer
+	Timeout     time.Duration
 }
 
 func NewRing(config Config) (*Ring, error) {
-	if config.Logger == nil {
-		config.Logger = hclog.New(&hclog.LoggerOptions{
+	logger := config.Logger
+	if logger == nil {
+		logger = hclog.New(&hclog.LoggerOptions{
 			Name:   "ring",
 			Output: hclog.DefaultOutput,
 			Level:  hclog.DefaultLevel,
 		})
 	}
+	transport := NewTransportWithConfig(
+		&TransportConfig{
+			Stream:  config.StreamLayer,
+			Logger:  logger,
+			Timeout: config.Timeout,
+		},
+	)
 	r := &Ring{
 		Config:    config,
 		shutdowns: make(chan struct{}),
 		handler: newHandlerWrapper(&handlerWrapperConfig{
 			Logger: config.Logger,
 		}),
+		logger:    logger,
+		transport: transport,
 	}
 	setup := []func() (func() error, error){
 		r.setupConsistentHashRouter,
 		r.setupMembership,
+		r.setupPaxos,
 	}
 	for _, fn := range setup {
 		shutdownListener, err := fn()
@@ -65,7 +86,7 @@ func NewRing(config Config) (*Ring, error) {
 
 func (r *Ring) setupConsistentHashRouter() (func() error, error) {
 	var err error
-	r.router, err = newConsistentHashRouter(r.HashFunction, r.NodeName, r.tags())
+	r.router, err = newConsistentHashRouter(r.HashFunction, r.NodeName, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +117,14 @@ func (r *Ring) setupMembership() (func() error, error) {
 		}
 		return nil
 	}, nil
+}
+
+func (r *Ring) setupPaxos() (func() error, error) {
+	r.acceptor = newAcceptor(r.NodeName, r.transport, r.logger)
+	r.proposor = newProposer(r.NodeName, r.transport, r.logger)
+
+	r.AddListener("paxos-proposer", r.proposor)
+	return nil, nil
 }
 
 // AddListener registers the listener that will be called upon the node join/leave event in the ring.
@@ -166,6 +195,7 @@ func (r *Ring) Shutdown() error {
 const (
 	memberTypeJSON   = "member_type"
 	virtualNodesJSON = "virtual_nodes"
+	ringRPCAddrJSON  = "ring_rpc_addr"
 )
 
 func (r *Ring) tags() map[string]string {
@@ -175,6 +205,9 @@ func (r *Ring) tags() map[string]string {
 	}
 	tagsToBeSent[virtualNodesJSON] = strconv.Itoa(r.Config.VirtualNodeCount)
 	tagsToBeSent[memberTypeJSON] = strconv.Itoa(int(r.Config.MemberType))
+	if r.StreamLayer != nil {
+		tagsToBeSent[ringRPCAddrJSON] = r.StreamLayer.Addr().String()
+	}
 	return tagsToBeSent
 }
 
@@ -207,12 +240,12 @@ func (h *handlerWrapper) Join(nodeName string, tags map[string]string) error {
 	return nil
 }
 
-func (h *handlerWrapper) Leave(rpcAddr string) error {
+func (h *handlerWrapper) Leave(rpcAddr string, tags map[string]string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
 	for listenerId, listener := range h.listeners {
-		if err := listener.Leave(rpcAddr); err != nil {
+		if err := listener.Leave(rpcAddr, tags); err != nil {
 			h.logger.Error(fmt.Sprintf("Error while leaving %s", listenerId), "error", err)
 		}
 	}

@@ -57,9 +57,11 @@ func newConsistentHashRouter(hashFunction HashFunction, nodeKey string, tags map
 		},
 		currentNodeKey: nodeKey,
 	}
-	err := ch.Join(nodeKey, tags)
-	if err != nil {
-		return nil, err
+	if tags != nil {
+		err := ch.Join(nodeKey, tags)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return ch, nil
 }
@@ -83,6 +85,7 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 
 	// remove unnecessary information.
 	delete(tags, virtualNodesJSON)
+	delete(tags, ringRPCAddrJSON)
 
 	if memberType == ShardMember {
 		pNode := c.createOrGetParentNode(nodeKey)
@@ -201,7 +204,7 @@ func (c *consistentHashRouter) handleResharding(newNodes []uint64) {
 	c.notifyListeners(batch)
 }
 
-func (c *consistentHashRouter) Leave(nodeKey string) error {
+func (c *consistentHashRouter) Leave(nodeKey string, tags map[string]string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
