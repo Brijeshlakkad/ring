@@ -63,9 +63,6 @@ func (m *membership) eventHandler() {
 		switch e.EventType() {
 		case serf.EventMemberJoin:
 			for _, member := range e.(serf.MemberEvent).Members {
-				if m.isLocal(member) {
-					continue
-				}
 				m.handleJoin(member)
 			}
 		case serf.EventMemberLeave:
@@ -91,6 +88,7 @@ func (m *membership) handleJoin(member serf.Member) {
 func (m *membership) handleLeave(member serf.Member) {
 	if err := m.handler.Leave(
 		member.Name,
+		member.Tags,
 	); err != nil {
 		m.logError(err, "failed to leave", member)
 	}

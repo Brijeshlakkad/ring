@@ -19,7 +19,7 @@ func TestMembership(t *testing.T) {
 	m, _ = setupMember(t, m, LoadBalancerMember)
 
 	require.Eventually(t, func() bool {
-		return 4 == len(handler.joins) &&
+		return 5 == len(handler.joins) &&
 			5 == len(m[0].Members()) &&
 			0 == len(handler.leaves)
 	}, 3*time.Second, 250*time.Millisecond)
@@ -27,7 +27,7 @@ func TestMembership(t *testing.T) {
 	require.NoError(t, m[2].Leave())
 
 	require.Eventually(t, func() bool {
-		return 4 == len(handler.joins) &&
+		return 5 == len(handler.joins) &&
 			5 == len(m[0].Members()) &&
 			serf.StatusLeft == m[0].Members()[2].Status &&
 			1 == len(handler.leaves)
@@ -41,9 +41,9 @@ func setupMember(t *testing.T, members []*membership, memberType MemberType) ([]
 	ports := dynaport.Get(1)
 	addr := fmt.Sprintf("%s:%d", "127.0.0.1", ports[0])
 	tags := map[string]string{
-		"rpc_addr":      addr,
-		"virtual_nodes": "3",
-		"member_type":   strconv.Itoa(int(memberType)),
+		"rpc_addr":       addr,
+		virtualNodesJSON: "3",
+		memberTypeJSON:   strconv.Itoa(int(memberType)),
 	}
 	c := MembershipConfig{
 		NodeName: fmt.Sprintf("%d", id),
@@ -75,9 +75,9 @@ func (h *handler) Join(nodeKey string, tags map[string]string) error {
 	return nil
 }
 
-func (h *handler) Leave(id string) error {
+func (h *handler) Leave(nodeKey string, tags map[string]string) error {
 	if h.leaves != nil {
-		h.leaves <- id
+		h.leaves <- nodeKey
 	}
 	return nil
 }

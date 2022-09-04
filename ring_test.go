@@ -2,6 +2,7 @@ package ring_test
 
 import (
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -14,61 +15,14 @@ const (
 	objectKey = "object-test-key"
 )
 
-func TestRing_Listener(t *testing.T) {
-	h := &handler{}
-	h.joins = make(chan map[string]string, 3)
-	h.leaves = make(chan string, 3)
-	ringMembers := setupTestRingMembers(t, 3, func(ringMemberConfig *ring.Config, i int) {
-		if i == 2 {
-			ringMemberConfig.MemberType = ring.LoadBalancerMember
-		} else {
-			ringMemberConfig.MemberType = ring.ShardMember
-		}
-	},
-		func(ringMember *ring.Ring, i int) {
-			if i == 0 {
-				ringMember.AddListener("test-listener-0", h)
-			}
-			if i == 2 {
-				ringMember.MemberType = ring.LoadBalancerMember
-			}
-		})
-
-	require.Eventually(t, func() bool {
-		return 2 == len(h.joins) &&
-			0 == len(h.leaves)
-	}, 3*time.Second, 250*time.Millisecond)
-
-	memberId := <-h.joins
-	memberAddr, ok := ringMembers[1].Tags["rpc_addr"]
-	require.True(t, ok)
-
-	require.Equal(t, memberAddr, memberId["rpc_addr"])
-
-	defer func() {
-		err := ringMembers[1].Shutdown()
-		require.NoError(t, err)
-
-		require.Eventually(t, func() bool {
-			return 1 == len(h.joins) &&
-				1 == len(h.leaves)
-		}, 3*time.Second, 250*time.Millisecond)
-
-		err = ringMembers[2].Shutdown()
-		require.NoError(t, err)
-
-		err = ringMembers[0].Shutdown()
-		require.NoError(t, err)
-	}()
-}
-
 func TestRing_GetLoadBalancers(t *testing.T) {
 	h := &handler{}
-	h.joins = make(chan map[string]string, 3)
-	h.leaves = make(chan string, 3)
+	memberCount := 3
+	h.joins = make(chan map[string]string, memberCount)
+	h.leaves = make(chan string, memberCount)
 	leaderIndex := 0
 	loadBalancerIndex := 2
-	ringMembers := setupTestRingMembers(t, 3, func(ringMemberConfig *ring.Config, i int) {
+	ringMembers := setupTestRingMembers(t, memberCount, func(ringMemberConfig *ring.Config, i int) {
 		if i == 2 {
 			ringMemberConfig.MemberType = ring.LoadBalancerMember
 		} else {
@@ -111,15 +65,17 @@ func (h *handler) Join(nodeKey string, tags map[string]string) error {
 	return nil
 }
 
-func (h *handler) Leave(id string) error {
+func (h *handler) Leave(nodeKey string, tags map[string]string) error {
 	if h.leaves != nil {
-		h.leaves <- id
+		h.leaves <- nodeKey
 	}
 	return nil
 }
 
 func TestRing_ConsistentHashRouter_For_Single_Node_Ring(t *testing.T) {
 	ringMembers := setupTestRingMembers(t, 1, nil, nil)
+
+	time.Sleep(100 * time.Millisecond)
 
 	node, ok := ringMembers[0].GetNode(objectKey)
 	require.Equal(t, true, ok)
@@ -155,6 +111,8 @@ func setupTestRingMembers(t *testing.T, count int, beforeRingMember func(*ring.C
 			},
 			VirtualNodeCount: 3,
 			SeedAddresses:    seedAddresses,
+			StreamLayer:      setupRing_StreamLayer(t),
+			Timeout:          time.Millisecond,
 		}
 
 		if beforeRingMember != nil {
@@ -172,4 +130,48 @@ func setupTestRingMembers(t *testing.T, count int, beforeRingMember func(*ring.C
 	}
 
 	return ringMembers
+}
+
+func setupRing_StreamLayer(t *testing.T) ring.StreamLayer {
+	t.Helper()
+	ports := dynaport.Get(1)
+	rpcAddr := fmt.Sprintf("localhost:%d", ports[0])
+	listener, err := net.Listen("tcp", rpcAddr)
+	require.NoError(t, err)
+
+	streamLayer := &testStreamLayer{
+		listener: listener,
+	}
+	require.NoError(t, err)
+
+	return streamLayer
+}
+
+type testStreamLayer struct {
+	advertise net.Addr
+	listener  net.Listener
+}
+
+// Dial implements the StreamLayer interface.
+func (t *testStreamLayer) Dial(address ring.ServerAddress, timeout time.Duration) (net.Conn, error) {
+	return net.DialTimeout("tcp", string(address), timeout)
+}
+
+// Accept implements the net.Listener interface.
+func (t *testStreamLayer) Accept() (c net.Conn, err error) {
+	return t.listener.Accept()
+}
+
+// Close implements the net.Listener interface.
+func (t *testStreamLayer) Close() (err error) {
+	return t.listener.Close()
+}
+
+// Addr implements the net.Listener interface.
+func (t *testStreamLayer) Addr() net.Addr {
+	// Use an advertise addr if provided
+	if t.advertise != nil {
+		return t.advertise
+	}
+	return t.listener.Addr()
 }

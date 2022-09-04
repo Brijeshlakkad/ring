@@ -95,7 +95,7 @@ func TestConsistentHashRouter_Leave(t *testing.T) {
 	require.Equal(t, true, found)
 	require.Equal(t, vNodeCount, len(vNodes))
 
-	err = ch.Leave(nodeKey0)
+	err = ch.Leave(nodeKey0, nil)
 	require.NoError(t, err)
 
 	_, found = ch.Get(fakeData)
