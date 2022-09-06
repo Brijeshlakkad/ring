@@ -1,3 +1,46 @@
+CONFIG_PATH=${HOME}/.ring/
+
+.PHONY: init
+init:
+	mkdir -p ${CONFIG_PATH}
+
+.PHONY: gencert
+gencert:
+	cfssl gencert \
+		-initca cert/ca-csr.json | cfssljson -bare ca
+
+	cfssl gencert \
+		-ca=ca.pem \
+		-ca-key=ca-key.pem \
+		-config=cert/ca-config.json \
+		-profile=server \
+		cert/server-csr.json | cfssljson -bare server
+
+	cfssl gencert \
+		-ca=ca.pem \
+		-ca-key=ca-key.pem \
+		-config=cert/ca-config.json \
+		-profile=client \
+		cert/client-csr.json | cfssljson -bare client
+
+	cfssl gencert \
+		-ca=ca.pem \
+		-ca-key=ca-key.pem \
+		-config=cert/ca-config.json \
+		-profile=client \
+		-cn="root" \
+		cert/client-csr.json | cfssljson -bare root-client
+
+	cfssl gencert \
+		-ca=ca.pem \
+		-ca-key=ca-key.pem \
+		-config=cert/ca-config.json \
+		-profile=client \
+		-cn="nobody" \
+		cert/client-csr.json | cfssljson -bare nobody-client
+	
+	mv *.pem *.csr ${CONFIG_PATH}
+
 .PHONY: test
 test:
 	go test -race -v

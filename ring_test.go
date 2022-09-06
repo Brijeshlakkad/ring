@@ -159,7 +159,7 @@ func setupRing_Member(t *testing.T, seedAddresses []string, i int, beforeRingMem
 		},
 		VirtualNodeCount: 3,
 		SeedAddresses:    seedAddresses,
-		Timeout:          10 * time.Millisecond,
+		Timeout:          time.Second,
 	}
 
 	if beforeRingMember != nil {

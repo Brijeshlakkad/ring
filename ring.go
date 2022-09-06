@@ -36,6 +36,8 @@ type Ring struct {
 	membershipBindAddr      string
 	membershipSeedAddresses []string // To join the cluster.
 	startupConfig           *StartupConfig
+
+	changeListenerLock sync.Mutex
 }
 
 type Config struct {
@@ -72,7 +74,23 @@ func NewRing(config Config) (*Ring, error) {
 	if err != nil {
 		return nil, err
 	}
-	streamLayer := newRingStreamLayer(list, nil, nil)
+	// create server TLS
+	serverTLSConfig, err := SetupTLSConfig(TLSConfig{
+		CertFile:      ServerCertFile,
+		KeyFile:       ServerKeyFile,
+		CAFile:        CAFile,
+		Server:        true,
+		ServerAddress: "127.0.0.1",
+	})
+	// create peer TLS to communicate to other servers.
+	peerTLSConfig, err := SetupTLSConfig(TLSConfig{
+		CertFile:      RootClientCertFile,
+		KeyFile:       RootClientKeyFile,
+		CAFile:        CAFile,
+		Server:        false,
+		ServerAddress: "127.0.0.1",
+	})
+	streamLayer := newRingStreamLayer(list, serverTLSConfig, peerTLSConfig)
 	transport := NewTransportWithConfig(
 		&TransportConfig{
 			Stream:  streamLayer,
@@ -213,11 +231,17 @@ func (r *Ring) RemoveListener(listenerId string) {
 
 // AddResponsibilityChangeListener registers the listener that will be called when the current node responsibility changes due to joining of the new nodes.
 func (r *Ring) AddResponsibilityChangeListener(listenerId string, handler ShardResponsibilityHandler) {
+	r.changeListenerLock.Lock()
+	defer r.changeListenerLock.Unlock()
+
 	r.router.AddListener(listenerId, handler)
 }
 
 // RemoveResponsibilityChangeListener removes the listener from the router using the listenerId.
 func (r *Ring) RemoveResponsibilityChangeListener(listenerId string) {
+	r.changeListenerLock.Lock()
+	defer r.changeListenerLock.Unlock()
+
 	r.router.RemoveListener(listenerId)
 }
 
