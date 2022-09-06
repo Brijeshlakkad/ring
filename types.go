@@ -44,7 +44,8 @@ type Server struct {
 type RequestType uint8
 
 const (
-	Paxos RequestType = iota
+	RingRequestType RequestType = iota
+	PaxosRequestType
 )
 
 type PaxosMessageType uint8

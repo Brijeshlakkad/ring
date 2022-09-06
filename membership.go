@@ -67,9 +67,6 @@ func (m *membership) eventHandler() {
 			}
 		case serf.EventMemberLeave:
 			for _, member := range e.(serf.MemberEvent).Members {
-				if m.isLocal(member) {
-					continue
-				}
 				m.handleLeave(member)
 			}
 		}

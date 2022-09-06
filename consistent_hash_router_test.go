@@ -17,7 +17,11 @@ const nodeKey0 = "node-0"
 func TestConsistentHashRouter_Get(t *testing.T) {
 	hashFunction := &MD5HashFunction{}
 	nodeName := "shard-node-0"
-	ch, err := newConsistentHashRouter(hashFunction, nodeName, setupTags(t, 0, ShardMember))
+	rConfig := routerConfig{
+		HashFunction: hashFunction,
+		NodeName:     nodeName,
+	}
+	ch, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 
 	var nodeKeys []string
@@ -27,7 +31,7 @@ func TestConsistentHashRouter_Get(t *testing.T) {
 		nodeKey := fmt.Sprintf("node-%d", i)
 
 		err = ch.Join(nodeKey, setupTags(t, vNodeCount, ShardMember))
-		require.NoError(t, err)
+		require.Error(t, err, ErrVirtualNodeCount)
 
 		nodeKeys = append(nodeKeys, nodeKey)
 	}
@@ -46,13 +50,26 @@ func TestConsistentHashRouter_Get(t *testing.T) {
 		nodeKeys = append(nodeKeys, nodeKey)
 	}
 
+	vNodeCount = 1
+	for i := 0; i < 4; i++ {
+		nodeKey := fmt.Sprintf("node-%d", i)
+
+		err = ch.Join(nodeKey, setupTags(t, vNodeCount, ShardMember))
+		require.Error(t, err, ErrNodeIsAlreadyOnRing)
+
+		nodeKeys = append(nodeKeys, nodeKey)
+	}
+
 	_, found = ch.Get(fakeData)
 	require.Equal(t, true, found)
 }
 
 func TestVirtualNode_GetKey(t *testing.T) {
 	nodeName := "shard-node-0"
-	ch, err := newConsistentHashRouter(nil, nodeName, setupTags(t, 0, ShardMember))
+	rConfig := routerConfig{
+		NodeName: nodeName,
+	}
+	ch, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 
 	// 4 virtual nodes
@@ -74,7 +91,10 @@ func TestVirtualNode_GetKey(t *testing.T) {
 
 func TestConsistentHashRouter_Leave(t *testing.T) {
 	nodeName := "shard-node-0"
-	ch, err := newConsistentHashRouter(nil, nodeName, setupTags(t, 0, ShardMember))
+	rConfig := routerConfig{
+		NodeName: nodeName,
+	}
+	ch, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 
 	// 1 virtual nodes
@@ -105,7 +125,11 @@ func TestConsistentHashRouter_Leave(t *testing.T) {
 func TestConsistentHashRouter_JoinLeave(t *testing.T) {
 	hashFunction := &MD5HashFunction{}
 	nodeName := "shard-node-0"
-	ch, err := newConsistentHashRouter(hashFunction, nodeName, setupTags(t, 0, ShardMember))
+	rConfig := routerConfig{
+		HashFunction: hashFunction,
+		NodeName:     nodeName,
+	}
+	ch, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 	require.NoError(t, err)
 
@@ -119,7 +143,7 @@ func TestConsistentHashRouter_JoinLeave(t *testing.T) {
 	var expected []string
 	for i := 1; i < 5; i++ {
 		nodeKey := fmt.Sprintf("load-balancer-key-%d", i)
-		err = ch.Join(nodeKey, setupTags(t, 0, LoadBalancerMember))
+		err = ch.Join(nodeKey, setupTags(t, 1, LoadBalancerMember))
 		expected = append(expected, nodeKey)
 		require.NoError(t, err)
 	}
@@ -144,13 +168,16 @@ func TestConsistentHashRouter_JoinLeave(t *testing.T) {
 func TestConsistentHashRouter_Join_VirtualNodes(t *testing.T) {
 	hashFunction := &MD5HashFunction{}
 	nodeName := "shard-node-0"
-	ch, err := newConsistentHashRouter(hashFunction, nodeName, setupTags(t, 0, ShardMember))
+	rConfig := routerConfig{
+		HashFunction: hashFunction,
+		NodeName:     nodeName,
+	}
+	ch, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 
 	require.Equal(t, 0, len(ch.sortedMap))
 
 	vNode := 2
-	totalNodes := vNode
 	err = ch.Join(fmt.Sprintf(nodeName), setupTags(t, vNode, ShardMember))
 	require.NoError(t, err)
 
@@ -159,13 +186,6 @@ func TestConsistentHashRouter_Join_VirtualNodes(t *testing.T) {
 	pNode := ch.createOrGetParentNode(nodeName)
 
 	require.Equal(t, vNode, len(pNode.virtualNodes))
-
-	totalNodes += vNode
-	err = ch.Join(fmt.Sprintf(nodeName), setupTags(t, vNode, ShardMember))
-	require.NoError(t, err)
-
-	require.Equal(t, totalNodes, len(ch.sortedMap))
-	require.Equal(t, totalNodes, len(pNode.virtualNodes))
 }
 
 // TestConsistentHashRouter_HandleResharding_SingleJoin tests if the current node gets notified with the correct range of keys to transfer to the new nodes.
@@ -196,8 +216,11 @@ func TestConsistentHashRouter_HandleResharding_SingleJoin(t *testing.T) {
 	}
 
 	currentNode := nodes[0]
-	tags := setupTags(t, 0, ShardMember)
-	c, err := newConsistentHashRouter(hashFunction, currentNode, tags)
+	rConfig := routerConfig{
+		HashFunction: hashFunction,
+		NodeName:     currentNode,
+	}
+	c, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 
 	handler := &testChangeHandler{
@@ -277,8 +300,11 @@ func TestConsistentHashRouter_HandleResharding_MultipleJoin(t *testing.T) {
 	}
 
 	currentNode := nodes[0]
-	tags := setupTags(t, 0, ShardMember)
-	c, err := newConsistentHashRouter(hashFunction, currentNode, tags)
+	rConfig := routerConfig{
+		HashFunction: hashFunction,
+		NodeName:     currentNode,
+	}
+	c, err := newConsistentHashRouter(rConfig)
 	require.NoError(t, err)
 
 	handler := &testChangeHandler{
@@ -337,6 +363,103 @@ func TestConsistentHashRouter_HandleResharding_MultipleJoin(t *testing.T) {
 	require.Equal(t, newNode, newEvents[5].newNode)
 	require.Equal(t, uint64(expectedHashes[5]), newEvents[5].start)
 	require.Nil(t, newEvents[5].end)
+}
+
+func TestConsistentHashRouter_GetConfig(t *testing.T) {
+	nodeName := "node-0"
+	nodeCount := 4
+	nodes := make(map[uint64]*parentNode, nodeCount)
+	hashFunction := &MD5HashFunction{}
+
+	// Expected router configuration.
+	for i := 0; i < nodeCount; i++ {
+		node := &parentNode{
+			nodeKey: fmt.Sprintf("node-%d", i),
+			tags: map[string]string{
+				"rpc_addr": fmt.Sprintf("127.0.0.1:1%d34", i),
+			},
+		}
+
+		// virtual nodes
+		virtualNodes := make(map[uint64]*virtualNode)
+		for i := 0; i < 3; i++ {
+			vNode := &virtualNode{
+				parentNode: node,
+				index:      i,
+			}
+			virtualNodes[hashFunction.Hash(vNode.GetKey())] = vNode
+		}
+
+		node.virtualNodes = virtualNodes
+
+		nodes[hashFunction.Hash(node.GetKey())] = node
+	}
+
+	// create startup configuration.
+	startupConfig := &StartupConfig{
+		Nodes: make(map[uint64]ConfigurationNode),
+	}
+	for _, pNode := range nodes {
+		VirtualNodes := make(map[uint64]int)
+		for vNodeHash, vNode := range pNode.virtualNodes {
+			VirtualNodes[vNodeHash] = vNode.index
+		}
+		startupConfig.Nodes[hashFunction.Hash(pNode.GetKey())] = ConfigurationNode{
+			NodeKey:      pNode.nodeKey,
+			Tags:         pNode.tags,
+			VirtualNodes: VirtualNodes,
+		}
+	}
+
+	rConfig := routerConfig{
+		HashFunction:  &MD5HashFunction{},
+		NodeName:      nodeName,
+		startupConfig: startupConfig,
+	}
+	c, err := newConsistentHashRouter(rConfig)
+	require.NoError(t, err)
+
+	// check if the configuration set is correct.
+	for pNodeHash, pNode := range c.realNodes {
+		expectedNode, ok := nodes[pNodeHash]
+		require.True(t, ok)
+		require.Equal(t, expectedNode, pNode)
+
+		for vNodeHash, expectedVNode := range expectedNode.virtualNodes {
+			found := false
+			for _, savedVNode := range c.sortedMap {
+				if savedVNode == vNodeHash {
+					found = true
+					break
+				}
+			}
+			require.True(t, found)
+
+			vNode, ok := pNode.virtualNodes[vNodeHash]
+			require.True(t, ok)
+
+			require.Equal(t, expectedVNode, vNode)
+		}
+	}
+
+	// Check if the configuration is correct.
+	configResp := c.getConfig()
+	require.Equal(t, nodeCount, len(configResp.Nodes))
+
+	for hash, node := range configResp.Nodes {
+		pNode, ok := nodes[hash]
+		require.True(t, ok)
+
+		require.Equal(t, pNode.tags, node.Tags)
+		require.Equal(t, pNode.nodeKey, node.NodeKey)
+		require.Equal(t, len(pNode.virtualNodes), len(node.VirtualNodes))
+
+		for vNodeHash, vNodeIndex := range node.VirtualNodes {
+			vNode, ok := pNode.virtualNodes[vNodeHash]
+			require.True(t, ok)
+			require.Equal(t, vNode.index, vNodeIndex)
+		}
+	}
 }
 
 type testChangeHandler struct {

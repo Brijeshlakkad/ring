@@ -11,20 +11,27 @@ import (
 )
 
 var (
-	ErrRealNodeNotFound = errors.New("real node not found")
+	ErrStartupConfiguration = errors.New("startup configuration is not correct")
+	ErrNodeIsAlreadyOnRing  = errors.New("node has already joined the ring")
+	ErrVirtualNodeCount     = errors.New("virtual node count should be greater than zero")
 )
 
 type consistentHashRouter struct {
 	hashFunction HashFunction
-	realNodes    map[uint64]*parentNode
-	virtualNodes map[uint64]*virtualNode
-	sortedMap    []uint64
 
-	lock          sync.RWMutex
+	// Real physical nodes on the ring.
+	realNodes map[uint64]*parentNode
+
+	// Nodes on the ring.
+	virtualNodes  map[uint64]*virtualNode
 	loadBalancers map[string]*loadBalancer
 
+	sortedMap []uint64
+
+	lock sync.RWMutex
+
 	*shardChangeHandler
-	currentNodeKey string
+	nodeName string
 }
 
 type loadBalancer struct {
@@ -41,13 +48,19 @@ func (p *parentNode) GetKey() string {
 	return p.nodeKey
 }
 
-func newConsistentHashRouter(hashFunction HashFunction, nodeKey string, tags map[string]string) (*consistentHashRouter, error) {
-	if hashFunction == nil {
+type routerConfig struct {
+	HashFunction  HashFunction
+	NodeName      string
+	startupConfig *StartupConfig
+}
+
+func newConsistentHashRouter(config routerConfig) (*consistentHashRouter, error) {
+	if config.HashFunction == nil {
 		// Default hash function
-		hashFunction = &MD5HashFunction{}
+		config.HashFunction = &MD5HashFunction{}
 	}
 	ch := &consistentHashRouter{
-		hashFunction:  hashFunction,
+		hashFunction:  config.HashFunction,
 		realNodes:     map[uint64]*parentNode{},
 		virtualNodes:  map[uint64]*virtualNode{},
 		sortedMap:     []uint64{},
@@ -55,18 +68,50 @@ func newConsistentHashRouter(hashFunction HashFunction, nodeKey string, tags map
 		shardChangeHandler: &shardChangeHandler{
 			listeners: make(map[string]ShardResponsibilityHandler),
 		},
-		currentNodeKey: nodeKey,
+		nodeName: config.NodeName,
 	}
-	if tags != nil {
-		err := ch.Join(nodeKey, tags)
-		if err != nil {
-			return nil, err
+
+	if config.startupConfig == nil {
+		return ch, nil
+	}
+
+	// Set the configuration from the startup config.
+	for hash, node := range config.startupConfig.Nodes {
+		if ch.hashFunction.Hash(node.NodeKey) != hash {
+			return nil, ErrStartupConfiguration
 		}
+		pNode := &parentNode{
+			nodeKey:      node.NodeKey,
+			tags:         node.Tags,
+			virtualNodes: make(map[uint64]*virtualNode),
+		}
+
+		for vHash, vNodeIndex := range node.VirtualNodes {
+			vNode := &virtualNode{
+				parentNode: pNode,
+				index:      vNodeIndex,
+			}
+			if ch.hashFunction.Hash(vNode.GetKey()) != vHash {
+				return nil, ErrStartupConfiguration
+			}
+			ch.sortedMap = append(ch.sortedMap, vHash)
+			pNode.virtualNodes[vHash] = vNode
+			ch.virtualNodes[vHash] = vNode
+		}
+		ch.realNodes[hash] = pNode
+
+		// Enables to do binary search
+		sort.Slice(ch.sortedMap, func(i, j int) bool {
+			return ch.sortedMap[i] < ch.sortedMap[j]
+		})
 	}
 	return ch, nil
 }
 
 func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) error {
+	if _, ok := c.realNodes[c.hashFunction.Hash(nodeKey)]; ok {
+		return ErrNodeIsAlreadyOnRing
+	}
 	vNodeCount, err := strconv.Atoi(tags[virtualNodesJSON])
 	if err != nil {
 		return err
@@ -77,8 +122,8 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 	}
 	memberType := MemberType(uint8(memberTypeInt))
 
-	if vNodeCount < 0 {
-		return errors.New("virtual node count should be equal or greater than zero")
+	if vNodeCount <= 0 && memberType == ShardMember {
+		return ErrVirtualNodeCount
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -130,12 +175,6 @@ func (c *consistentHashRouter) Join(nodeKey string, tags map[string]string) erro
 	return nil
 }
 
-type newHashNode struct {
-	hash uint64
-	prev *newHashNode
-	next *newHashNode
-}
-
 func (c *consistentHashRouter) handleResharding(newNodes []uint64) {
 	// Sort the new nodes.
 	sort.Slice(newNodes, func(i, j int) bool {
@@ -174,7 +213,7 @@ func (c *consistentHashRouter) handleResharding(newNodes []uint64) {
 	// Build a map to send the changes in a single batch.
 	var batch []ShardResponsibility
 	for currentNodeHash, newNodesOfCurrent := range affectedNodeMap {
-		if c.virtualNodes[currentNodeHash].getRealNode() == c.currentNodeKey {
+		if c.virtualNodes[currentNodeHash].getRealNode() == c.nodeName {
 			sort.Slice(newNodesOfCurrent, func(i, j int) bool {
 				return newNodesOfCurrent[i] < newNodesOfCurrent[j]
 			})
@@ -230,6 +269,28 @@ func (c *consistentHashRouter) Leave(nodeKey string, tags map[string]string) err
 		delete(c.loadBalancers, nodeKey)
 	}
 	return nil
+}
+
+func (c *consistentHashRouter) getConfig() *StartupConfig {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	resp := &StartupConfig{
+		Nodes: make(map[uint64]ConfigurationNode),
+	}
+	for realNodeHash, realNode := range c.realNodes {
+		node := ConfigurationNode{
+			NodeKey:      realNode.nodeKey,
+			VirtualNodes: make(map[uint64]int),
+			Tags:         realNode.tags,
+		}
+		for hash, virtualNode := range realNode.virtualNodes {
+			node.VirtualNodes[hash] = virtualNode.index
+		}
+		resp.Nodes[realNodeHash] = node
+	}
+
+	return resp
 }
 
 func (c *consistentHashRouter) createOrGetParentNode(nodeKey string) *parentNode {

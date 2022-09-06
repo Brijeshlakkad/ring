@@ -1,12 +1,10 @@
-package ring_test
+package ring
 
 import (
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
-	"github.com/Brijeshlakkad/ring"
 	"github.com/stretchr/testify/require"
 	"github.com/travisjeffery/go-dynaport"
 )
@@ -16,24 +14,21 @@ const (
 )
 
 func TestRing_GetLoadBalancers(t *testing.T) {
-	h := &handler{}
+	h := &testHandler{}
 	memberCount := 3
 	h.joins = make(chan map[string]string, memberCount)
 	h.leaves = make(chan string, memberCount)
 	leaderIndex := 0
 	loadBalancerIndex := 2
-	ringMembers := setupTestRingMembers(t, memberCount, func(ringMemberConfig *ring.Config, i int) {
-		if i == 2 {
-			ringMemberConfig.MemberType = ring.LoadBalancerMember
+	ringMembers := setupTestRingMembers(t, memberCount, func(ringMemberConfig *Config, i int) {
+		if i == loadBalancerIndex {
+			ringMemberConfig.MemberType = LoadBalancerMember
 		} else {
-			ringMemberConfig.MemberType = ring.ShardMember
+			ringMemberConfig.MemberType = ShardMember
 		}
-	}, func(ringMember *ring.Ring, i int) {
+	}, func(ringMember *Ring, i int) {
 		if i == leaderIndex {
 			ringMember.AddListener("test-listener-0", h)
-		}
-		if i == loadBalancerIndex {
-			ringMember.MemberType = ring.LoadBalancerMember
 		}
 	})
 
@@ -51,25 +46,6 @@ func TestRing_GetLoadBalancers(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}()
-}
-
-type handler struct {
-	joins  chan map[string]string
-	leaves chan string
-}
-
-func (h *handler) Join(nodeKey string, tags map[string]string) error {
-	if h.joins != nil {
-		h.joins <- tags
-	}
-	return nil
-}
-
-func (h *handler) Leave(nodeKey string, tags map[string]string) error {
-	if h.leaves != nil {
-		h.leaves <- nodeKey
-	}
-	return nil
 }
 
 func TestRing_ConsistentHashRouter_For_Single_Node_Ring(t *testing.T) {
@@ -90,88 +66,108 @@ func TestRing_ConsistentHashRouter(t *testing.T) {
 	require.NotEmpty(t, node)
 }
 
-func setupTestRingMembers(t *testing.T, count int, beforeRingMember func(*ring.Config, int), afterRingMember func(*ring.Ring, int)) []*ring.Ring {
-	var ringMembers []*ring.Ring
+func TestRing_ConfigurationRequest(t *testing.T) {
+	h := &testHandler{}
+	h.joins = make(chan map[string]string, 1)
+	h.leaves = make(chan string, 1)
 
+	// 3 nodes on the ring
+	ringMember0 := setupRing_Member(t, []string{}, 0, func(config *Config, i int) {
+		config.MemberType = ShardMember
+	})
+	ringMember1 := setupRing_Member(t, []string{ringMember0.BindAddr}, 1, func(config *Config, i int) {
+		config.MemberType = ShardMember
+	})
+	ringMember2 := setupRing_Member(t, []string{ringMember0.BindAddr, ringMember1.BindAddr}, 2, func(config *Config, i int) {
+		config.MemberType = ShardMember
+	})
+	ringMember3 := setupRing_Member(t, []string{ringMember0.BindAddr, ringMember1.BindAddr}, 2, func(config *Config, i int) {
+		config.MemberType = ShardMember
+	})
+
+	resp := &ConfigurationResponse{}
+	err := ringMember2.transport.SendConfigurationRequest(ServerAddress(ringMember0.BindAddr), &ConfigurationRequest{}, resp)
+	require.NoError(t, err)
+	require.NotNil(t, resp.StartupConfig)
+
+	require.Equal(t, 3, len(resp.StartupConfig.Nodes)) // total nodes on the ring.
+
+	for _, node := range resp.StartupConfig.Nodes {
+		require.Equal(t, 3, len(node.VirtualNodes)) // we have set the number of virtual nodes to 3.
+	}
+
+	resp = &ConfigurationResponse{}
+	err = ringMember3.transport.SendConfigurationRequest(ServerAddress(ringMember1.BindAddr), &ConfigurationRequest{}, resp)
+	require.NoError(t, err)
+	require.NotNil(t, resp.StartupConfig)
+
+	require.Equal(t, 3, len(resp.StartupConfig.Nodes)) // total nodes on the ring.
+
+	for _, node := range resp.StartupConfig.Nodes {
+		require.Equal(t, 3, len(node.VirtualNodes)) // we have set the number of virtual nodes to 3.
+	}
+}
+
+type testHandler struct {
+	joins  chan map[string]string
+	leaves chan string
+}
+
+func (h *testHandler) Join(nodeKey string, tags map[string]string) error {
+	if h.joins != nil {
+		h.joins <- tags
+	}
+	return nil
+}
+
+func (h *testHandler) Leave(nodeKey string, tags map[string]string) error {
+	if h.leaves != nil {
+		h.leaves <- nodeKey
+	}
+	return nil
+}
+
+func setupTestRingMembers(t *testing.T, count int, beforeRingMember func(*Config, int), afterRingMember func(*Ring, int)) []*Ring {
+	var ringMembers []*Ring
 	for i := 0; i < count; i++ {
-		ports := dynaport.Get(2)
-		bindAddr := fmt.Sprintf("%s:%d", "127.0.0.1", ports[0])
-		rpcPort := ports[1]
-
 		var seedAddresses []string
 		if i > 0 {
-			seedAddresses = []string{ringMembers[0].Config.BindAddr}
+			seedAddresses = []string{ringMembers[0].BindAddr}
 		}
 
-		config := ring.Config{
-			NodeName: fmt.Sprintf("Ring Member %d", i),
-			BindAddr: bindAddr,
-			Tags: map[string]string{
-				"rpc_addr": fmt.Sprintf("localhost:%d", rpcPort),
-			},
-			VirtualNodeCount: 3,
-			SeedAddresses:    seedAddresses,
-			StreamLayer:      setupRing_StreamLayer(t),
-			Timeout:          time.Millisecond,
-		}
-
-		if beforeRingMember != nil {
-			beforeRingMember(&config, i)
-		}
-
-		ringMember, err := ring.NewRing(config)
-		require.NoError(t, err)
-
+		ringMember := setupRing_Member(t, seedAddresses, i, beforeRingMember)
 		if afterRingMember != nil {
 			afterRingMember(ringMember, i)
 		}
-
 		ringMembers = append(ringMembers, ringMember)
 	}
-
 	return ringMembers
 }
 
-func setupRing_StreamLayer(t *testing.T) ring.StreamLayer {
+func setupRing_Member(t *testing.T, seedAddresses []string, i int, beforeRingMember func(config *Config, i int)) *Ring {
 	t.Helper()
-	ports := dynaport.Get(1)
-	rpcAddr := fmt.Sprintf("localhost:%d", ports[0])
-	listener, err := net.Listen("tcp", rpcAddr)
+
+	ports := dynaport.Get(2)
+	bindAddr := fmt.Sprintf("%s:%d", "127.0.0.1", ports[0])
+	rpcPort := ports[1]
+
+	config := Config{
+		NodeName: fmt.Sprintf("Ring Member %d", i),
+		BindAddr: bindAddr,
+		Tags: map[string]string{
+			"rpc_addr": fmt.Sprintf("localhost:%d", rpcPort),
+		},
+		VirtualNodeCount: 3,
+		SeedAddresses:    seedAddresses,
+		Timeout:          10 * time.Millisecond,
+	}
+
+	if beforeRingMember != nil {
+		beforeRingMember(&config, i)
+	}
+
+	ringMember, err := NewRing(config)
 	require.NoError(t, err)
 
-	streamLayer := &testStreamLayer{
-		listener: listener,
-	}
-	require.NoError(t, err)
-
-	return streamLayer
-}
-
-type testStreamLayer struct {
-	advertise net.Addr
-	listener  net.Listener
-}
-
-// Dial implements the StreamLayer interface.
-func (t *testStreamLayer) Dial(address ring.ServerAddress, timeout time.Duration) (net.Conn, error) {
-	return net.DialTimeout("tcp", string(address), timeout)
-}
-
-// Accept implements the net.Listener interface.
-func (t *testStreamLayer) Accept() (c net.Conn, err error) {
-	return t.listener.Accept()
-}
-
-// Close implements the net.Listener interface.
-func (t *testStreamLayer) Close() (err error) {
-	return t.listener.Close()
-}
-
-// Addr implements the net.Listener interface.
-func (t *testStreamLayer) Addr() net.Addr {
-	// Use an advertise addr if provided
-	if t.advertise != nil {
-		return t.advertise
-	}
-	return t.listener.Addr()
+	return ringMember
 }

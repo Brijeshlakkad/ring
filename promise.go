@@ -79,6 +79,44 @@ func (c *proposalPromise) respond(resp interface{}) *proposalPromise {
 	return c
 }
 
+type ConfigurationRequest struct {
+}
+
+// ConfigurationNode has the reusable router information.
+type ConfigurationNode struct {
+	NodeKey      string
+	VirtualNodes map[uint64]int
+	Tags         map[string]string
+}
+
+type ConfigurationResponse struct {
+	StartupConfig *StartupConfig
+	BindAddr      string
+}
+
+type configurationPromise struct {
+	promiseError
+	req  *ConfigurationRequest
+	resp *ConfigurationResponse
+}
+
+func (c *configurationPromise) init() {
+	c.promiseError.init()
+}
+
+func (c *configurationPromise) Request() *ConfigurationRequest {
+	return c.req
+}
+
+func (c *configurationPromise) Response() interface{} {
+	return c.resp
+}
+
+func (c *configurationPromise) respond(resp interface{}) *configurationPromise {
+	c.resp = resp.(*ConfigurationResponse)
+	return c
+}
+
 // rpcResponse captures both a response and a potential error.
 type rpcResponse struct {
 	Response interface{}

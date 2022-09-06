@@ -48,7 +48,7 @@ func newAcceptor(nodeName string, transport *Transport, logger hclog.Logger) *ac
 		accepted:  make(map[string]*proposal),
 		learners:  make(map[string]*paxosClient),
 		acceptors: make(map[string]map[string]*proposal),
-		rpcCh:     transport.Consumer(), // Comes from the transport.
+		rpcCh:     transport.AcceptorConsumer(), // Comes from the transport.
 		transport: transport,
 		logger:    logger,
 	}

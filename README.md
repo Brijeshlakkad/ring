@@ -4,18 +4,17 @@ Go utility to build Peer to Peer Architecture easily.
 
 ## Ring Configuration parameters
 
-| Parameters       | Type                                                                     | Usage                                                                                                                                                                                 |
-|------------------|--------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| BindAddr         | string                                                                   | The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946". [Read more](https://www.serf.io/docs/agent/options.html#bind) |
-| Tags             | map[string]string                                                        | Tags will be sent with NodeName when a new member joins the ring.                                                                                                                     |
-| NodeName         | string                                                                   | Unique node name to identify this member.                                                                                                                                             |
-| SeedAddresses    | []string                                                                 | Addresses of other members to join upon start up.                                                                                                                                     |
-| VirtualNodeCount | int                                                                      | Number of virtual nodes to create on the ring for this member.                                                                                                                        |
-| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/main/types.go) | Hash function to calculate position of the server on the ring.                                                                                                                        |
-| MemberType       | [MemberType](https://github.com/Brijeshlakkad/ring/blob/main/types.go)   | Type of the membership: 1. ShardMember 2. LoadBalancerMember.                                                                                                                         |
-| StreamLayer      | [StreamLayer](https://github.com/Brijeshlakkad/ring/blob/main/types.go)  | Stream layer to communicate with other ring members to have a consensus on the order of the operations.                                                                               |
-| Timeout          | time.Duration                                                            | Sets the timeout in the network in handling connections.                                                                                                                              |
-| Logger           | [hclog.Logger](https://github.com/hashicorp/go-hclog)                    | Human readable output mode in development and JSON mode for production.                                                                                                               |
+| Parameters       | Type                                                                     | Usage                                                                                                   |
+|------------------|--------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| BindAddr         | string                                                                   | The address that Ring will bind to for communication with other members on the ring.                    |
+| Tags             | map[string]string                                                        | Tags will be sent with NodeName when a new member joins the ring.                                       |
+| NodeName         | string                                                                   | Unique node name to identify this member.                                                               |
+| SeedAddresses    | []string                                                                 | Addresses of other members to join upon start up.                                                       |
+| VirtualNodeCount | int                                                                      | Number of virtual nodes to create on the ring for this member.                                          |
+| HashFunction     | [HashFunction](https://github.com/Brijeshlakkad/ring/blob/main/types.go) | Hash function to calculate position of the server on the ring.                                          |
+| MemberType       | [MemberType](https://github.com/Brijeshlakkad/ring/blob/main/types.go)   | Type of the membership: 1. ShardMember 2. LoadBalancerMember.                                           |
+| Timeout          | time.Duration                                                            | Sets the timeout in the network in handling connections.                                                |
+| Logger           | [hclog.Logger](https://github.com/hashicorp/go-hclog)                    | Human readable output mode in development and JSON mode for production.                                 |
 
 ## Quick Start
 
@@ -27,13 +26,16 @@ import (
 "github.com/Brijeshlakkad/ring"
 )
 
-ringMember, err := ring.NewMember(ring.Config{
-NodeName:           'Unique_node_name_0', // Node name.
-SeedAddresses:      []string{},       // Addresses of other members to join upon start up.
-BindAddr:           '127.0.0.1:7946', // The address that Ring will bind to for communication with other members on the ring. By default this is "0.0.0.0:7946".
-RPCPort:            '7373',           // The address that Ring will bind to for the member's RPC server. By default this is "127.0.0.1:7373", allowing only loopback connections.
-VirtualNodeCount:   '3', // This will create 3 virtual nodes on the ring.
-MemberType:         LoadBalancerMember, // This member will not take part in the sharding, but has the list of members (ShardMember) who is responsible for sharding. 
+ringMember, err := ring.NewRing(ring.Config{
+    NodeName:           "Unique_node_name_0", // Node name.
+    SeedAddresses:      []string{},       // Addresses of other members to join upon start up.
+    BindAddr:           "127.0.0.1:7946", // The address that Ring will bind to for communication with other members on the ring.
+    Tags:               map[string]string{      // Tags to be sent to other members upon joining the ring.
+        "rpc_addr": "127.0.0.1:1234",
+        "custom_key": "custom_value"
+    },
+    VirtualNodeCount:   3, // This will create 3 virtual nodes on the ring.
+    MemberType:         LoadBalancerMember, // This member will not take part in the sharding, but has the list of members (ShardMember) who is responsible for sharding. 
 })
 ```
 

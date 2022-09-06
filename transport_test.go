@@ -21,7 +21,7 @@ func TestTransport_SendPaxosMessage(t *testing.T) {
 		},
 	)
 	defer trans1.Close()
-	rpcCh := trans1.Consumer()
+	rpcCh := trans1.AcceptorConsumer()
 
 	// Make the RPC request
 	args := Message{
@@ -82,6 +82,97 @@ func TestTransport_SendPaxosMessage(t *testing.T) {
 		defer wg.Done()
 		var out Message
 		if err := trans2.SendPaxosMessage(trans1.LocalAddr(), &args, &out); err != nil {
+			t.Fatalf("err: %v", err)
+		}
+
+		// Verify the response
+		if !reflect.DeepEqual(resp, out) {
+			t.Fatalf("command mismatch: %#v %#v", resp, out)
+		}
+	}
+
+	// Try to do parallel appends, should stress the conn pool
+	go appendFunc()
+
+	// Wait for the routines to finish
+	wg.Wait()
+
+}
+
+func TestTransport_SendConfigurationRequest(t *testing.T) {
+	streamLayer, err := newTCPStreamLayer("localhost:0", nil)
+	require.NoError(t, err)
+
+	// Transport 1 is consumer
+	trans1 := NewTransportWithConfig(
+		&TransportConfig{
+			Stream:  streamLayer,
+			Timeout: 4 * time.Second,
+		},
+	)
+	defer trans1.Close()
+	rpcCh := trans1.RingConsumer()
+
+	// Make the RPC request
+	args := ConfigurationRequest{}
+
+	resp := ConfigurationResponse{
+		StartupConfig: &StartupConfig{
+			Nodes: map[uint64]ConfigurationNode{
+				uint64(1): {
+					NodeKey: nodeKey0,
+					Tags: map[string]string{
+						"rpc_addr": "127.0.0.1:1234",
+					},
+					VirtualNodes: map[uint64]int{
+						uint64(2): 0,
+						uint64(3): 1,
+					},
+				},
+			},
+		},
+	}
+
+	// Listen for a request
+	go func() {
+		for {
+			select {
+			case rpc := <-rpcCh:
+				// Verify the command
+				req := rpc.Command.(*ConfigurationRequest)
+				if !reflect.DeepEqual(req, &args) {
+					t.Errorf("command mismatch: %#v %#v", *req, args)
+					return
+				}
+				rpc.Respond(&resp, nil)
+
+			case <-time.After(200 * time.Millisecond):
+				return
+			}
+		}
+	}()
+
+	// Transport 2 makes outbound request
+	streamLayer2, err := newTCPStreamLayer("localhost:0", nil)
+	require.NoError(t, err)
+
+	// Transport 2 is consumer
+	trans2 := NewTransportWithConfig(
+		&TransportConfig{
+			Stream:  streamLayer2,
+			Timeout: 4 * time.Second,
+		},
+	)
+	defer trans2.Close()
+
+	// Create wait group
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	appendFunc := func() {
+		defer wg.Done()
+		var out ConfigurationResponse
+		if err := trans2.SendConfigurationRequest(trans1.LocalAddr(), &args, &out); err != nil {
 			t.Fatalf("err: %v", err)
 		}
 

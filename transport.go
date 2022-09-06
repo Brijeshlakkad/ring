@@ -30,8 +30,8 @@ var (
 	// invoked after it's been terminated.
 	ErrTransportShutdown = errors.New("transport shutdown")
 
-	// ErrPipelineShutdown is returned when the pipeline is closed.
-	ErrPipelineShutdown = errors.New("command pipeline closed")
+	// ErrCommandNotFound to notify the sender that command is invalid.
+	ErrCommandNotFound = errors.New("command couldn't be handled")
 )
 
 /*
@@ -67,7 +67,8 @@ type Transport struct {
 	shutdownCh   chan struct{}
 	shutdownLock sync.Mutex
 
-	consumeCh chan rpc
+	acceptorCh chan rpc
+	ringCh     chan rpc
 }
 
 // TransportConfig encapsulates configuration for the network transport layer.
@@ -99,7 +100,8 @@ func NewTransportWithConfig(
 		connPool:   make(map[ServerAddress][]*netConn),
 		logger:     config.Logger,
 		maxPool:    config.MaxPool,
-		consumeCh:  make(chan rpc),
+		acceptorCh: make(chan rpc),
+		ringCh:     make(chan rpc),
 		shutdownCh: make(chan struct{}),
 		stream:     config.Stream,
 		timeout:    config.Timeout,
@@ -165,12 +167,17 @@ func (transport *Transport) Close() error {
 	return nil
 }
 
-// Consumer implements the Transport interface.
-func (transport *Transport) Consumer() <-chan rpc {
-	return transport.consumeCh
+// AcceptorConsumer returns the channel to consume the incoming request for paxos request type.
+func (transport *Transport) AcceptorConsumer() <-chan rpc {
+	return transport.acceptorCh
 }
 
-// LocalAddr implements the Transport interface.
+// RingConsumer returns the channel to consume the incoming request for ring request type.
+func (transport *Transport) RingConsumer() <-chan rpc {
+	return transport.ringCh
+}
+
+// LocalAddr returns the local address of this node.
 func (transport *Transport) LocalAddr() ServerAddress {
 	return ServerAddress(transport.stream.Addr().String())
 }
@@ -246,7 +253,12 @@ func (transport *Transport) returnConn(conn *netConn) {
 
 // SendPaxosMessage uses genericRPC to send the prepare/proposal/accepted request.
 func (transport *Transport) SendPaxosMessage(target ServerAddress, req *Message, resp *Message) error {
-	return transport.genericRPC(target, Paxos, req, resp)
+	return transport.genericRPC(target, PaxosRequestType, req, resp)
+}
+
+// SendConfigurationRequest fetches the startup configuration from the target.
+func (transport *Transport) SendConfigurationRequest(target ServerAddress, req *ConfigurationRequest, resp interface{}) error {
+	return transport.genericRPC(target, RingRequestType, req, resp)
 }
 
 // genericRPC handles a simple request/response RPC.
@@ -365,23 +377,29 @@ func (transport *Transport) handleCommand(conn net.Conn, r *bufio.Reader, dec *c
 		},
 	}
 
+	ch := transport.ringCh
 	switch RequestType(rpcType) {
-	case Paxos:
-		//msgType, err := r.ReadByte()
-		//if err != nil {
-		//	return err
-		//}
+	case PaxosRequestType:
+		ch = transport.acceptorCh
 		req := &Message{}
 		if err := dec.Decode(req); err != nil {
 			return err
 		}
-		//req.MsgType = PaxosMessageType(msgType)
 		rpc.Command = req
+	case RingRequestType:
+		// ch is already set to ringCh
+		req := &ConfigurationRequest{}
+		if err := dec.Decode(req); err != nil {
+			return err
+		}
+		rpc.Command = req
+	default:
+		return ErrCommandNotFound
 	}
 
 	// Dispatch the RPC
 	select {
-	case transport.consumeCh <- rpc:
+	case ch <- rpc:
 	case <-transport.shutdownCh:
 		return ErrTransportShutdown
 	}
@@ -451,18 +469,10 @@ func sendRPC(conn *netConn, reqType RequestType, args interface{}) error {
 		return err
 	}
 
-	if reqType == Paxos {
-		msg := args.(*Message)
-		//// Write the paxos message type
-		//if err := conn.w.WriteByte(uint8(proposal.msgType)); err != nil {
-		//	conn.Release()
-		//	return err
-		//}
-		// Send the request
-		if err := conn.enc.Encode(msg); err != nil {
-			conn.Release()
-			return err
-		}
+	// Send the request
+	if err := conn.enc.Encode(args); err != nil {
+		conn.Release()
+		return err
 	}
 
 	// Flush
